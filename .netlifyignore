@@ -1,0 +1,5 @@
+bot/
+.git/
+.cursor/
+*.md
+render.yaml

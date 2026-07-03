@@ -1,0 +1,11 @@
+[build]
+  command = "node scripts/generate-config.js"
+  publish = "."
+
+[build.environment]
+  NODE_VERSION = "20"
+  WS_URL = "wss://tiltcheck-royale.fly.dev"
+  API_URL = "https://tiltcheck-royale.fly.dev"
+  DISCORD_CLIENT_ID = "1507876760686039071"
+
+# SPA-style fallback not needed; static HTML pages only

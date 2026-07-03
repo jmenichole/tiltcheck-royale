@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: tiltcheck-royale-bot
+    runtime: node
+    rootDir: bot
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: ACTIVITY_URL
+        sync: false
+      - key: WS_PUBLIC_URL
+        sync: false
