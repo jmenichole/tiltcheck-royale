@@ -9,9 +9,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const isNetlify = process.env.NETLIFY === 'true';
+
 const config = {
-    WS_URL: process.env.WS_URL || 'ws://localhost:8080',
-    API_URL: process.env.API_URL || 'http://localhost:8080',
+    WS_URL: process.env.WS_URL || (isNetlify ? 'wss://tiltcheck-royale.fly.dev' : 'ws://localhost:8080'),
+    API_URL: process.env.API_URL || (isNetlify ? 'https://tiltcheck-royale.fly.dev' : 'http://localhost:8080'),
     DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '1507876760686039071',
 };
 

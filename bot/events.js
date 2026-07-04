@@ -108,8 +108,8 @@ const Events = {
     },
 
     victory: [
-        "🏆 **{v}** staggered into the Willamette Valley, sunburned, half-starved, and the last one standing. **{v} wins Dysentery Royale** with **{kills} kill{s}**!",
-        "🎉 Against all odds — dysentery, gunfire, and Gerald the ox — **{v}** has reached Oregon alive. **Dysentery Royale Champion** with **{kills} kill{s}**.",
+        "🏆 **{v}** staggered into the Willamette Valley, sunburned, half-starved, and the last one standing. **{v} wins Tilt Battle Royale** with **{kills} kill{s}**!",
+        "🎉 Against all odds — dysentery, gunfire, and Gerald the ox — **{v}** has reached Oregon alive. **Tilt Battle Royale Champion** with **{kills} kill{s}**.",
         "☠️ The frontier claimed everyone. No one reached Oregon. The crows feast well tonight.",
     ],
 };

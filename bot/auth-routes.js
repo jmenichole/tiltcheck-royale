@@ -47,7 +47,7 @@ function createAuthRoutes(app, { clientId, clientSecret }) {
     });
 
     app.get('/api/health', (_req, res) => {
-        res.json({ ok: true, service: 'tiltcheck-royale-bot' });
+        res.json({ ok: true, service: 'tilt-battle-royale-bot' });
     });
 }
 

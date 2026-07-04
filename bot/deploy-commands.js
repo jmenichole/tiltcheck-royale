@@ -14,7 +14,7 @@ const config = getConfig();
 const commands = [
     new SlashCommandBuilder()
         .setName('royale')
-        .setDescription('🪖 Start a game of Tiltcheck Royale!')
+        .setDescription('🪖 Start a game of Tilt Battle Royale!')
         .addIntegerOption(opt =>
             opt.setName('lobby_seconds')
                .setDescription('How many seconds to wait for players to join (default: 60)')

@@ -25,10 +25,47 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     overflow-x: hidden;
     overflow-y: auto;
+}
+
+body.discord-activity {
+    height: 100vh;
+    min-height: 100vh;
+    padding: 6px;
+    overflow: hidden;
+    justify-content: center;
+}
+
+body.discord-activity .site-footer {
+    display: none;
+}
+
+body.discord-activity .system-outer {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body.discord-activity .monitor-bezel {
+    width: 100%;
+    max-width: 100%;
+    padding: 12px 12px 8px;
+}
+
+body.discord-activity .crt-screen {
+    height: min(520px, calc(100vh - 140px));
+}
+
+body.discord-activity .simulation-dashboard {
+    min-height: 140px;
 }
 
 /* System Container centering the monitor */
@@ -38,6 +75,7 @@ body {
     max-width: 1100px;
     padding: 20px;
     box-sizing: border-box;
+    flex-shrink: 0;
 }
 
 /* 90s Desktop Monitor Bezel Shell */
@@ -1145,26 +1183,33 @@ body {
 }
 
 .site-footer {
+    width: 100%;
+    max-width: 1100px;
     text-align: center;
     font-family: 'VT323', monospace;
-    font-size: 16px;
-    color: #888;
-    margin-top: 12px;
-    padding: 8px;
+    font-size: 12px;
+    color: #666;
+    margin-top: 8px;
+    padding: 4px 8px 12px;
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 4px 10px;
+    box-sizing: border-box;
+}
+
+.site-footer .footer-sep {
+    opacity: 0.5;
 }
 
 .site-footer a {
     color: #33ff33;
     text-decoration: none;
+    font-size: 12px;
 }
 
 .site-footer a:hover {
     text-decoration: underline;
-}
-
-.footer-disclaimer {
-    display: block;
-    font-size: 14px;
-    margin-top: 4px;
-    opacity: 0.85;
 }

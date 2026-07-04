@@ -1,4 +1,4 @@
-# Tiltcheck Royale
+# Tilt Battle Royale
 
 Oregon Trail-inspired battle royale for Discord. Players join a wagon lobby with `/royale`; the bot runs the simulation and posts daily embeds. The CRT web UI is a **live spectator** that mirrors the bot via WebSocket.
 

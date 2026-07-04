@@ -1,5 +1,5 @@
 /**
- * TILTCHECK ROYALE - Discord Bot
+ * TILT BATTLE ROYALE - Discord Bot
  * Slash commands, lobby, simulation, embeds, and channel-scoped WebSocket sync.
  */
 
@@ -19,7 +19,8 @@ const { createGame, createCharacter, runDay, checkWinner } = require('./simulati
 requireEnv();
 const config = getConfig();
 
-const FOOTER = 'Tiltcheck Royale';
+const FOOTER = 'Tilt Battle Royale';
+const BRAND = 'TILT BATTLE ROYALE';
 
 // ─── Discord Client ───────────────────────────────────────────────────────────
 const client = new Client({
@@ -69,7 +70,7 @@ function buildLobbyEmbed(game, secondsLeft) {
 
     return new EmbedBuilder()
         .setColor(COLOR_GREEN)
-        .setTitle('🪖 TILTCHECK ROYALE — LOBBY OPEN')
+        .setTitle(`🪖 ${BRAND} — LOBBY OPEN`)
         .setDescription(
             '```\n' +
             ' ______     _ _ _\n' +
@@ -112,7 +113,7 @@ function buildDayEmbed(day, events, distance, weather, rations, aliveCount, tota
 function buildVictoryEmbed(text, winner) {
     const embed = new EmbedBuilder()
         .setColor(COLOR_GOLD)
-        .setTitle('🏆 TILTCHECK ROYALE — FINAL RESULT')
+        .setTitle(`🏆 ${BRAND} — FINAL RESULT`)
         .setDescription(
             '```\n' +
             '  ____   ___  _   _ _____\n' +
@@ -157,7 +158,6 @@ function buildLobbyButtons(channelId, gameStarted = false) {
             .setStyle(ButtonStyle.Danger)
             .setDisabled(gameStarted),
         new ButtonBuilder()
-            .setCustomId('open_activity')
             .setLabel('🖥️ Open Retro View')
             .setStyle(ButtonStyle.Link)
             .setURL(activityUrl(channelId)),
@@ -188,7 +188,7 @@ async function startSimulation(channelId, lobbyMessageId) {
     try {
         const lobbyMsg = await channel.messages.fetch(lobbyMessageId);
         await lobbyMsg.edit({
-            embeds: [buildLobbyEmbed(game, 0).setTitle('🪖 TILTCHECK ROYALE — DEPARTED!').setDescription('The wagon has left. May the trail have mercy.')],
+            embeds: [buildLobbyEmbed(game, 0).setTitle(`🪖 ${BRAND} — DEPARTED!`).setDescription('The wagon has left. May the trail have mercy.')],
             components: [buildLobbyButtons(channelId, true)],
         });
     } catch (_) {}
@@ -196,7 +196,7 @@ async function startSimulation(channelId, lobbyMessageId) {
     broadcast(channelId, { type: 'game_start', party: game.party });
 
     await channel.send({
-        content: `🟢 **Tiltcheck Royale has begun!** ${game.party.length} pioneers set off west.\n> *Use \`🖥️ Open Retro View\` above to watch in the retro CRT interface!*`,
+        content: `🟢 **Tilt Battle Royale has begun!** ${game.party.length} pioneers set off west.\n> *Use \`🖥️ Open Retro View\` above to watch in the retro CRT interface!*`,
     });
 
     const TICK_MS = 4000;
@@ -290,13 +290,26 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 // ─── Event Handlers ───────────────────────────────────────────────────────────
-client.once(DEvents.ClientReady, () => {
-    console.log(`✅ Tiltcheck Royale bot online as ${client.user.tag}`);
+client.once(DEvents.ClientReady, async () => {
+    console.log(`✅ Tilt Battle Royale bot online as ${client.user.tag}`);
     console.log(`📡 HTTP + WebSocket on port ${config.port}`);
-    client.user.setActivity('Tiltcheck Royale 🪖', { type: 0 });
+    client.user.setActivity('Tilt Battle Royale 🪖', { type: 0 });
+
+    if (client.user.username !== config.botUsername) {
+        try {
+            await client.user.setUsername(config.botUsername);
+            console.log(`✅ Bot username updated to ${config.botUsername}`);
+        } catch (err) {
+            console.warn(
+                `Could not auto-rename bot to "${config.botUsername}". ` +
+                `Set it manually in Discord Developer Portal → Bot → Username. (${err.message})`,
+            );
+        }
+    }
 });
 
 client.on(DEvents.InteractionCreate, async (interaction) => {
+    try {
     if (interaction.isChatInputCommand() && interaction.commandName === 'royale') {
         const channelId = interaction.channelId;
 
@@ -392,6 +405,12 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         clearInterval(entry.countdownTimer);
         await interaction.reply({ content: '🚀 Departing early!', ephemeral: false });
         return startSimulation(channelId, lobbyMessageId);
+    }
+    } catch (err) {
+        console.error('Interaction error:', err);
+        if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ Something went wrong. Try again in a moment.', ephemeral: true }).catch(() => {});
+        }
     }
 });
 

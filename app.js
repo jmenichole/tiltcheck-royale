@@ -1,8 +1,18 @@
 /**
- * Tiltcheck Royale — Live Spectator (bot-driven CRT view)
+ * Tilt Battle Royale — Live Spectator (bot-driven CRT view)
  */
 
 const CFG = window.APP_CONFIG || {};
+
+// Netlify sometimes builds config.js with localhost — force production relay on live site
+if (
+    typeof location !== 'undefined'
+    && location.hostname.endsWith('netlify.app')
+    && (!CFG.WS_URL || CFG.WS_URL.includes('localhost'))
+) {
+    CFG.WS_URL = 'wss://tiltcheck-royale.fly.dev';
+    CFG.API_URL = 'https://tiltcheck-royale.fly.dev';
+}
 
 const Synth = {
     ctx: null,
@@ -62,6 +72,12 @@ const Spectator = {
   els: {},
 
     async init() {
+        if (typeof window.discordSdk !== 'undefined') {
+            document.body.classList.add('discord-activity');
+        } else if (window.self !== window.top) {
+            document.body.classList.add('discord-activity');
+        }
+
         this.cacheElements();
         this.bindThemeControls();
         await this.runBios();
@@ -113,8 +129,8 @@ const Spectator = {
 
     async runBios() {
         const lines = [
-            'TILTCHECK ROYALE SPECTATOR V1.0',
-            'Copyright (C) 2026 Tiltcheck Royale',
+            'TILT BATTLE ROYALE SPECTATOR V1.0',
+            'Copyright (C) 2026 Tilt Battle Royale',
             '--------------------------------------------',
             'Initializing wagon telemetry receiver...',
             'Parody work — not affiliated with Oregon Trail',

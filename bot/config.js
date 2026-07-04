@@ -27,6 +27,7 @@ function getConfig() {
         port,
         activityUrl,
         wsPublicUrl: process.env.WS_PUBLIC_URL || `ws://localhost:${port}`,
+        botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
     };
 }
 
