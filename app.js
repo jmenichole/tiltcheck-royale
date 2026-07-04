@@ -10,8 +10,8 @@ if (
     && location.hostname.endsWith('netlify.app')
     && (!CFG.WS_URL || CFG.WS_URL.includes('localhost'))
 ) {
-    CFG.WS_URL = 'wss://tiltcheck-royale.fly.dev';
-    CFG.API_URL = 'https://tiltcheck-royale.fly.dev';
+    CFG.WS_URL = 'wss://tilt-battle-royale.fly.dev';
+    CFG.API_URL = 'https://tilt-battle-royale.fly.dev';
 }
 
 const Synth = {

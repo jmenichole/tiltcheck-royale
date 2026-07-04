@@ -1,5 +1,5 @@
 {
-  "name": "tiltcheck-royale-bot",
+  "name": "tilt-battle-royale-bot",
   "version": "1.0.0",
   "description": "Tiltcheck Royale - Oregon Trail battle royale Discord bot",
   "main": "bot.js",

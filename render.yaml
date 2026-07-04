@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tiltcheck-royale-bot
+    name: tilt-battle-royale-bot
     runtime: node
     rootDir: bot
     buildCommand: npm install

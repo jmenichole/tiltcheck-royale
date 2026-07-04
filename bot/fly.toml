@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for tiltcheck-royale on 2026-07-03T03:24:42-05:00
+# fly.toml app configuration file for tilt-battle-royale
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'tiltcheck-royale'
+app = 'tilt-battle-royale'
 primary_region = 'iad'
 
 [build]

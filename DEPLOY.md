@@ -33,7 +33,7 @@ flyctl launch
 
 When prompted:
 
-- Use app name `tiltcheck-royale` (or pick another — update `fly.toml` to match)
+- Use app name `tilt-battle-royale` (or pick another — update `fly.toml` to match)
 - **Do not** deploy PostgreSQL/Redis
 - **Yes** deploy now (or deploy after secrets)
 
@@ -55,7 +55,7 @@ Check health:
 flyctlopen /api/health
 ```
 
-Your bot URL will be like: `https://tiltcheck-royale.fly.dev`
+Your bot URL will be like: `https://tilt-battle-royale.fly.dev`
 
 Re-register slash commands **once** from your machine (guild deploy):
 
@@ -86,18 +86,18 @@ npm run deploy
 
    | Key | Value |
    |-----|--------|
-   | `WS_URL` | `wss://tiltcheck-royale.fly.dev` |
-   | `API_URL` | `https://tiltcheck-royale.fly.dev` |
+   | `WS_URL` | `wss://tilt-battle-royale.fly.dev` |
+   | `API_URL` | `https://tilt-battle-royale.fly.dev` |
    | `DISCORD_CLIENT_ID` | `1507876760686039071` |
 
-5. Deploy site. Note your URL, e.g. `https://tiltcheck-royale.netlify.app`
+5. Deploy site. Note your URL, e.g. `https://tilt-battle-royale.netlify.app`
 
 ### Option B — Drag and drop
 
 1. Locally, set env vars and generate config:
    ```powershell
-   $env:WS_URL="wss://tiltcheck-royale.fly.dev"
-   $env:API_URL="https://tiltcheck-royale.fly.dev"
+   $env:WS_URL="wss://tilt-battle-royale.fly.dev"
+   $env:API_URL="https://tilt-battle-royale.fly.dev"
    node scripts/generate-config.js
    ```
 2. Zip repo root files (`index.html`, `app.js`, `style.css`, `config.js`, `privacy.html`, `terms.html`, `logo.png`) — **not** `bot/`
