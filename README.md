@@ -30,7 +30,7 @@ npm start
 |----------|----------|-------------|
 | `DISCORD_BOT_TOKEN` | yes | Bot token |
 | `DISCORD_CLIENT_ID` | yes | Application ID |
-| `DISCORD_GUILD_ID` | yes | Guild for slash command deploy |
+| `DISCORD_GUILD_ID` | no | Optional — instant guild deploy for testing; omit for global `/royale` |
 | `PORT` | no | HTTP port for health check (default 8080) |
 | `BOT_USERNAME` | no | Bot display username |
 
@@ -38,7 +38,7 @@ npm start
 
 1. Create application → Bot → enable **Message Content** if needed
 2. Install bot to server with `applications.commands` scope
-3. Run `npm run deploy` from `bot/` for each guild that should have `/royale`
+3. Run `npm run deploy` from `bot/` once (global — works in all invited servers)
 
 ## Deployment (Fly.io)
 

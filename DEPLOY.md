@@ -16,12 +16,12 @@ flyctl deploy
 Set secrets (from your `bot/.env`):
 
 ```powershell
-flyctl secrets set -a tilt-battle-royale DISCORD_BOT_TOKEN="..." DISCORD_CLIENT_ID="..." DISCORD_GUILD_ID="..." BOT_USERNAME="tilt-battle-royale"
+flyctl secrets set -a tilt-battle-royale DISCORD_BOT_TOKEN="..." DISCORD_CLIENT_ID="..." BOT_USERNAME="tilt-battle-royale"
 ```
 
 Health check: https://tilt-battle-royale.fly.dev/api/health
 
-Register `/royale` for each guild (local `.env` with that guild's ID):
+Register `/royale` once from your machine (works in every server the bot is invited to):
 
 ```powershell
 npm run deploy

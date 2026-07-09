@@ -2,7 +2,7 @@
  * Tiltcheck Royale — environment validation and shared config.
  */
 
-const REQUIRED = ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_GUILD_ID'];
+const REQUIRED = ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID'];
 
 function requireEnv(keys = REQUIRED) {
     const missing = keys.filter((k) => !process.env[k]?.trim());
@@ -20,7 +20,7 @@ function getConfig() {
         discord: {
             token: process.env.DISCORD_BOT_TOKEN,
             clientId: process.env.DISCORD_CLIENT_ID,
-            guildId: process.env.DISCORD_GUILD_ID,
+            guildId: process.env.DISCORD_GUILD_ID || '',
         },
         port,
         botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
