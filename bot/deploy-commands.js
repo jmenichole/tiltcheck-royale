@@ -15,18 +15,24 @@ const { requireEnv, getConfig } = require('./config.js');
 requireEnv(['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID']);
 const config = getConfig();
 
-const commands = [
-    new SlashCommandBuilder()
-        .setName('royale')
-        .setDescription('🪖 Start a game of Tilt Battle Royale!')
-        .addIntegerOption(opt =>
-            opt.setName('lobby_seconds')
-               .setDescription('How many seconds to wait for players to join (default: 60)')
-               .setMinValue(10)
-               .setMaxValue(180)
-               .setRequired(false)
-        ),
-].map(cmd => cmd.toJSON());
+const royaleCommand = new SlashCommandBuilder()
+    .setName('royale')
+    .setDescription('🪖 Start a game of Tilt Battle Royale!')
+    .addIntegerOption(opt =>
+        opt.setName('lobby_seconds')
+            .setDescription('How many seconds to wait for players to join (default: 60)')
+            .setMinValue(10)
+            .setMaxValue(180)
+            .setRequired(false)
+    )
+    .toJSON();
+
+/** Keep Discord-managed commands (e.g. Activity Entry Point) when replacing globals. */
+function preserveOtherCommands(existing) {
+    return existing
+        .filter(cmd => cmd.name !== 'royale')
+        .map(({ id, application_id, version, guild_id, ...cmd }) => cmd);
+}
 
 const rest = new REST({ version: '10' }).setToken(config.discord.token);
 
@@ -36,14 +42,19 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
             console.log(`Registering /royale for guild ${config.discord.guildId} (instant)...`);
             await rest.put(
                 Routes.applicationGuildCommands(config.discord.clientId, config.discord.guildId),
-                { body: commands },
+                { body: [royaleCommand] },
             );
             console.log('✅ Guild command registered — visible immediately in that server.');
         } else {
             console.log('Registering /royale globally (all servers)...');
+            const existing = await rest.get(Routes.applicationCommands(config.discord.clientId));
+            const preserved = preserveOtherCommands(existing);
+            if (preserved.length > 0) {
+                console.log(`Preserving ${preserved.length} existing command(s): ${preserved.map(c => c.name).join(', ')}`);
+            }
             await rest.put(
                 Routes.applicationCommands(config.discord.clientId),
-                { body: commands },
+                { body: [...preserved, royaleCommand] },
             );
             console.log('✅ Global command registered — works in every server the bot is in.');
             console.log('   Discord may take up to ~1 hour to propagate globally.');
