@@ -1,7 +1,7 @@
 {
   "name": "tilt-battle-royale-bot",
   "version": "1.0.0",
-  "description": "Tiltcheck Royale - Oregon Trail battle royale Discord bot",
+  "description": "Tilt Battle Royale - Oregon Trail battle royale Discord bot",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -10,8 +10,7 @@
   "dependencies": {
     "discord.js": "^14.15.0",
     "dotenv": "^16.4.0",
-    "express": "^4.21.0",
-    "ws": "^8.17.0"
+    "express": "^4.21.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -1,6 +1,6 @@
 /**
  * TILT BATTLE ROYALE - Discord Bot
- * Slash commands, lobby, simulation, embeds, and channel-scoped WebSocket sync.
+ * Slash commands, lobby, simulation, and daily embeds — Discord-only (no Activity).
  */
 
 require('dotenv').config();
@@ -12,8 +12,6 @@ const {
     Events: DEvents,
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
-const { createWsHandler, buildLobbyUpdate } = require('./ws-handler.js');
-const { createAuthRoutes } = require('./auth-routes.js');
 const { createGame, createCharacter, runDay, checkWinner } = require('./simulation.js');
 
 requireEnv();
@@ -22,43 +20,18 @@ const config = getConfig();
 const FOOTER = 'Tilt Battle Royale';
 const BRAND = 'TILT BATTLE ROYALE';
 
-// ─── Discord Client ───────────────────────────────────────────────────────────
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
 
-// ─── Active Games ─────────────────────────────────────────────────────────────
 const activeGames = new Map();
 
-const ws = createWsHandler({ getActiveGames: () => activeGames });
-
-function broadcast(channelId, payload) {
-    ws.broadcastToChannel(channelId, payload);
-}
-
-function emitLobbyUpdate(channelId) {
-    const entry = activeGames.get(channelId);
-    if (entry && entry.game.phase === 'lobby') {
-        broadcast(channelId, buildLobbyUpdate(channelId, entry));
-    }
-}
-
-// ─── HTTP + WebSocket Server ──────────────────────────────────────────────────
 const app = express();
-app.use(express.json());
-app.use((_req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    next();
+app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, service: 'tilt-battle-royale-bot', games: activeGames.size });
 });
-app.options('*', (_req, res) => res.sendStatus(204));
-createAuthRoutes(app, config.discord);
-
 const server = http.createServer(app);
-ws.attach(server);
 
-// ─── Embed Helpers ────────────────────────────────────────────────────────────
 const COLOR_GREEN = 0x00ff41;
 const COLOR_RED   = 0xff2222;
 const COLOR_GOLD  = 0xffd700;
@@ -136,11 +109,7 @@ function buildVictoryEmbed(text, winner) {
     return embed;
 }
 
-function activityUrl(channelId) {
-    return `${config.activityUrl}/?channelId=${channelId}`;
-}
-
-function buildLobbyButtons(channelId, gameStarted = false) {
+function buildLobbyButtons(gameStarted = false) {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('join_wagon')
@@ -157,14 +126,9 @@ function buildLobbyButtons(channelId, gameStarted = false) {
             .setLabel('🚀 Depart Early')
             .setStyle(ButtonStyle.Danger)
             .setDisabled(gameStarted),
-        new ButtonBuilder()
-            .setLabel('🖥️ Open Retro View')
-            .setStyle(ButtonStyle.Link)
-            .setURL(activityUrl(channelId)),
     );
 }
 
-// ─── Start Simulation ─────────────────────────────────────────────────────────
 async function startSimulation(channelId, lobbyMessageId) {
     const entry = activeGames.get(channelId);
     if (!entry) return;
@@ -189,14 +153,12 @@ async function startSimulation(channelId, lobbyMessageId) {
         const lobbyMsg = await channel.messages.fetch(lobbyMessageId);
         await lobbyMsg.edit({
             embeds: [buildLobbyEmbed(game, 0).setTitle(`🪖 ${BRAND} — DEPARTED!`).setDescription('The wagon has left. May the trail have mercy.')],
-            components: [buildLobbyButtons(channelId, true)],
+            components: [buildLobbyButtons(true)],
         });
     } catch (_) {}
 
-    broadcast(channelId, { type: 'game_start', party: game.party });
-
     await channel.send({
-        content: `🟢 **Tilt Battle Royale has begun!** ${game.party.length} pioneers set off west.\n> *Use \`🖥️ Open Retro View\` above to watch in the retro CRT interface!*`,
+        content: `🟢 **Tilt Battle Royale has begun!** ${game.party.length} pioneers set off west. Watch this channel for daily trail updates.`,
     });
 
     const TICK_MS = 4000;
@@ -207,7 +169,6 @@ async function startSimulation(channelId, lobbyMessageId) {
             clearInterval(entry.simTimer);
             game.phase = 'ended';
             await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner)] });
-            broadcast(channelId, { type: 'game_end', result });
             activeGames.delete(channelId);
             return;
         }
@@ -220,22 +181,11 @@ async function startSimulation(channelId, lobbyMessageId) {
             game.rations, aliveAfter.length, game.party.length,
         );
         await channel.send({ embeds: [embed] }).catch(() => {});
-
-        broadcast(channelId, {
-            type: 'day_update',
-            day: game.day,
-            events: dayEvents,
-            party: game.party,
-            distance: game.distance,
-            rations: game.rations,
-            weather: game.weather,
-        });
     };
 
     entry.simTimer = setInterval(tick, TICK_MS);
 }
 
-// ─── Countdown Timer ──────────────────────────────────────────────────────────
 async function startCountdown(channelId, lobbyMessageId, seconds) {
     const entry = activeGames.get(channelId);
     if (!entry) return;
@@ -244,7 +194,6 @@ async function startCountdown(channelId, lobbyMessageId, seconds) {
     if (!channel) return;
 
     entry.lobbySecondsLeft = seconds;
-    emitLobbyUpdate(channelId);
 
     const updateIntervals = new Set([seconds, Math.floor(seconds / 2), 30, 15, 10, 5].filter(s => s < seconds && s > 0));
 
@@ -257,14 +206,12 @@ async function startCountdown(channelId, lobbyMessageId, seconds) {
             return;
         }
 
-        emitLobbyUpdate(channelId);
-
         if (updateIntervals.has(entry.lobbySecondsLeft)) {
             const msg = await channel.messages.fetch(lobbyMessageId).catch(() => null);
             if (msg) {
                 await msg.edit({
                     embeds: [buildLobbyEmbed(entry.game, entry.lobbySecondsLeft)],
-                    components: [buildLobbyButtons(channelId)],
+                    components: [buildLobbyButtons()],
                 }).catch(() => {});
             }
         }
@@ -273,7 +220,6 @@ async function startCountdown(channelId, lobbyMessageId, seconds) {
     entry.countdownTimer = countdown;
 }
 
-// ─── Graceful Shutdown ────────────────────────────────────────────────────────
 function shutdown() {
     console.log('Shutting down...');
     for (const entry of activeGames.values()) {
@@ -289,10 +235,9 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// ─── Event Handlers ───────────────────────────────────────────────────────────
 client.once(DEvents.ClientReady, async () => {
     console.log(`✅ Tilt Battle Royale bot online as ${client.user.tag}`);
-    console.log(`📡 HTTP + WebSocket on port ${config.port}`);
+    console.log(`🌐 Health check on port ${config.port}`);
     client.user.setActivity('Tilt Battle Royale 🪖', { type: 0 });
 
     if (client.user.username !== config.botUsername) {
@@ -327,7 +272,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         const embed = buildLobbyEmbed(game, seconds);
         const reply = await interaction.reply({
             embeds: [embed],
-            components: [buildLobbyButtons(channelId)],
+            components: [buildLobbyButtons()],
             fetchReply: true,
         });
 
@@ -368,10 +313,9 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         if (msg) {
             await msg.edit({
                 embeds: [buildLobbyEmbed(game, entry.lobbySecondsLeft)],
-                components: [buildLobbyButtons(channelId)],
+                components: [buildLobbyButtons()],
             });
         }
-        emitLobbyUpdate(channelId);
 
         return interaction.reply({
             content: `🪙 **${user.displayName}** boarded the wagon as a **${character.profession}**!`,
@@ -390,10 +334,9 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         if (msg) {
             await msg.edit({
                 embeds: [buildLobbyEmbed(game, entry.lobbySecondsLeft)],
-                components: [buildLobbyButtons(channelId)],
+                components: [buildLobbyButtons()],
             });
         }
-        emitLobbyUpdate(channelId);
 
         return interaction.reply({ content: `🚪 **${user.displayName}** stepped off the wagon.`, ephemeral: false });
     }
@@ -414,7 +357,6 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
     }
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
 server.listen(config.port, '0.0.0.0', () => {
     console.log(`🌐 Health check: http://0.0.0.0:${config.port}/api/health`);
 });

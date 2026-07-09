@@ -15,18 +15,14 @@ function requireEnv(keys = REQUIRED) {
 
 function getConfig() {
     const port = parseInt(process.env.PORT || process.env.WS_PORT || '8080', 10);
-    const activityUrl = (process.env.ACTIVITY_URL || 'https://tiltroyale.netlify.app').replace(/\/$/, '');
 
     return {
         discord: {
             token: process.env.DISCORD_BOT_TOKEN,
             clientId: process.env.DISCORD_CLIENT_ID,
-            clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
             guildId: process.env.DISCORD_GUILD_ID,
         },
         port,
-        activityUrl,
-        wsPublicUrl: process.env.WS_PUBLIC_URL || `ws://localhost:${port}`,
         botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
     };
 }
