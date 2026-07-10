@@ -4,6 +4,7 @@
  */
 
 const { getThemePack } = require('./themes/index.js');
+const { getPhase, getPhaseMultipliers } = require('./pacing.js');
 
 function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
@@ -15,6 +16,25 @@ function rand(min, max) {
 
 function pluralS(n) {
     return n === 1 ? '' : 's';
+}
+
+function pushEvent(events, event, game, character) {
+    if (event.type === 'disease' && event.text?.includes('**') && character?.status !== 'Healthy') {
+        const seen = game.knownStatuses[character.id] || new Set();
+        if (!seen.has(character.status)) {
+            event.firstInfection = true;
+            seen.add(character.status);
+            game.knownStatuses[character.id] = seen;
+        }
+    }
+    events.push(event);
+}
+
+function syncPhase(game) {
+    const next = getPhase(game.distance);
+    const changed = next !== game.phase;
+    game.phase = next;
+    return changed ? next : null;
 }
 
 function createCharacter(discordUser, eraId = 'oregon-trail') {
@@ -76,7 +96,9 @@ function createGame(channelId, hostId, eraId = 'oregon-trail') {
         channelId,
         hostId,
         eraId,
-        phase: 'lobby',
+        phase: 'departure',
+        quietBuffer: null,
+        knownStatuses: {},
         party: [],
         day: 0,
         distance: 0,
@@ -98,8 +120,12 @@ function runDay(game) {
     game.day++;
     game.weather = pick(pack.weathers);
 
-    const miles = rand(10, 22);
+    const phase = getPhase(game.distance);
+    const mult = getPhaseMultipliers(phase);
+    const prevDistance = game.distance;
+    const miles = Math.round(rand(14, 28) * mult.miles);
     game.distance += miles;
+    game.phase = getPhase(game.distance);
 
     const alive = game.party.filter((c) => c.alive);
     const consumed = alive.length * 3;
@@ -107,12 +133,24 @@ function runDay(game) {
 
     events.push({
         type: 'day',
+        severity: 'routine',
         text: `Wagon advanced **${miles} miles** | Weather: **${game.weather}** | Rations: **${Math.max(0, game.rations)} lbs** | Alive: **${alive.length}**`,
         distance: game.distance,
         day: game.day,
         weather: game.weather,
         rations: game.rations,
     });
+
+    for (const mark of pack.landmarks) {
+        if (prevDistance < mark.mi && game.distance >= mark.mi) {
+            events.push({
+                type: 'day',
+                landmark: true,
+                landmarkName: mark.name,
+                text: `**Landmark: ${mark.name}**`,
+            });
+        }
+    }
 
     for (const c of alive) {
         if (c.status !== 'Healthy') {
@@ -173,7 +211,7 @@ function runDay(game) {
         const key = `river${Events.rivers.indexOf(river) + 1}Done`;
         if (!game[key] && game.distance >= river.distance && game.distance <= river.distance + 25) {
             game[key] = true;
-            events.push({ type: 'day', text: `**River crossing: ${river.name}**` });
+            events.push({ type: 'day', text: `**River crossing: ${river.name}**`, river: true });
 
             const roll = Math.random();
             const victim = pick(stillAlive);
@@ -206,47 +244,62 @@ function runDay(game) {
     const aliveNow = game.party.filter((c) => c.alive);
     if (aliveNow.length < 2) return events;
 
-    const roll = Math.random();
+    const w = {
+        combat: Math.min(0.95, weights.combat * mult.combat),
+        disease: Math.min(0.95, weights.disease * mult.disease),
+        loot: weights.loot,
+        hunt: weights.hunt,
+    };
 
-    if (roll < weights.combat) {
+    if (mult.forceCombat && aliveNow.length >= 2) {
         events.push(...resolveCombat(aliveNow, pack));
-    } else if (roll < weights.disease) {
-        const victim = pick(aliveNow.filter((c) => c.status === 'Healthy'));
-        if (victim) {
-            const sickness = pick(Events.diseases);
-            victim.status = sickness.status;
-            events.push({ type: 'disease', text: sickness.msg.replace('{v}', `**${victim.name}**`) });
-        }
-    } else if (roll < weights.loot) {
-        const finder = pick(aliveNow);
-        const loot = pick(Events.loot);
-        if (loot.item === 'Rations') {
-            game.rations += loot.amount;
-        } else if (!finder.items.includes(loot.item)) {
-            finder.items.push(loot.item);
-        }
-        events.push({ type: 'item', text: loot.msg.replace('{v}', `**${finder.name}**`) });
-    } else if (roll < weights.hunt) {
-        const hunters = aliveNow.filter((c) => c.profession === pack.hunterProfession);
-        const hunter = hunters.length > 0 && Math.random() < 0.65 ? pick(hunters) : pick(aliveNow);
-        const result = pick(Events.hunting);
-        let msg = result.msg.replace('{v}', `**${hunter.name}**`);
-        if (result.success) {
-            const gain = result.big ? 60 : rand(15, 30);
-            game.rations += gain;
-            msg = msg.replace(/\+\d+ lbs/, `+${gain} lbs`);
-            events.push({ type: 'item', text: msg });
+    } else {
+        const roll = Math.random();
+
+        if (roll < w.combat) {
+            events.push(...resolveCombat(aliveNow, pack));
+        } else if (roll < w.disease) {
+            const victim = pick(aliveNow.filter((c) => c.status === 'Healthy'));
+            if (victim) {
+                const sickness = pick(Events.diseases);
+                victim.status = sickness.status;
+                pushEvent(events, { type: 'disease', text: sickness.msg.replace('{v}', `**${victim.name}**`) }, game, victim);
+            }
+        } else if (roll < w.loot) {
+            const finder = pick(aliveNow);
+            const loot = pick(Events.loot);
+            if (loot.item === 'Rations') {
+                game.rations += loot.amount;
+            } else if (!finder.items.includes(loot.item)) {
+                finder.items.push(loot.item);
+            }
+            const lootEvent = { type: 'item', text: loot.msg.replace('{v}', `**${finder.name}**`) };
+            if (loot.item === 'Shotgun' || (loot.item === 'Rations' && loot.amount >= 50)) {
+                lootEvent.rareLoot = true;
+            }
+            events.push(lootEvent);
+        } else if (roll < w.hunt) {
+            const hunters = aliveNow.filter((c) => c.profession === pack.hunterProfession);
+            const hunter = hunters.length > 0 && Math.random() < 0.65 ? pick(hunters) : pick(aliveNow);
+            const result = pick(Events.hunting);
+            let msg = result.msg.replace('{v}', `**${hunter.name}**`);
+            if (result.success) {
+                const gain = result.big ? 60 : rand(15, 30);
+                game.rations += gain;
+                msg = msg.replace(/\+\d+ lbs/, `+${gain} lbs`);
+                events.push({ type: 'item', text: msg });
+            } else {
+                events.push({ type: 'passive', text: msg });
+            }
         } else {
+            const subject = pick(aliveNow);
+            const template = pick(Events.passive);
+            let msg = template.replace('{v}', `**${subject.name}**`);
+            if (template.includes('+15 HP')) {
+                subject.hp = Math.min(subject.maxHp, subject.hp + 15);
+            }
             events.push({ type: 'passive', text: msg });
         }
-    } else {
-        const subject = pick(aliveNow);
-        const template = pick(Events.passive);
-        let msg = template.replace('{v}', `**${subject.name}**`);
-        if (template.includes('+15 HP')) {
-            subject.hp = Math.min(subject.maxHp, subject.hp + 15);
-        }
-        events.push({ type: 'passive', text: msg });
     }
 
     return events;
@@ -355,4 +408,4 @@ function checkWinner(game) {
     return null;
 }
 
-module.exports = { createGame, createCharacter, createBotCharacter, runDay, checkWinner };
+module.exports = { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase };
