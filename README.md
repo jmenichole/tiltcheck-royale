@@ -30,7 +30,7 @@ npm start
 |----------|----------|-------------|
 | `DISCORD_BOT_TOKEN` | yes | Bot token |
 | `DISCORD_CLIENT_ID` | yes | Application ID |
-| `DISCORD_GUILD_ID` | no | Optional — instant guild deploy for testing; omit for global `/royale` |
+| `DISCORD_GUILD_IDS` | no | Comma-separated guild IDs — cleared on deploy so global commands don't duplicate |
 | `PORT` | no | HTTP port for health check (default 8080) |
 | `BOT_USERNAME` | no | Bot display username |
 
