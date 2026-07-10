@@ -1,15 +1,16 @@
 # Bot Ops Dashboard & Shared Analytics Design
 
 **Date:** 2026-07-10  
-**Status:** Approved — pending implementation plan  
+**Status:** Approved — v1 simplified to webhook alerts  
 **Owner:** jmenichole  
 **Pilot bot:** Tilt Battle Royale (`jmenichole/tiltcheck-royale`)
 
 ## Summary
 
-Build a **shared analytics layer** every Discord bot can emit to, plus a **minimal ops surface**: webhook alerts for high-signal events and a read-only admin dashboard querying one Supabase project. Tilt Battle Royale ships first as the template; other bots adopt the same `analytics.js` module.
+Post **high-signal bot events** to a private Discord channel via webhook — your bot-test server. Tilt Battle Royale ships first; copy a tiny `alerts.js` module to DAD and JustTheBuilder later.
 
-**v1 optimizes for:** instant alerts + queryable history (Approach C).
+**v1:** Discord webhook only (no Supabase, no dashboard UI).  
+**v2 (optional later):** Supabase `bot_events` table + read-only admin page if you want history and charts.
 
 ---
 
@@ -45,47 +46,76 @@ Repos under `jmenichole` scanned 2026-07-10. **In scope** for the shared dashboa
 
 ### Future additions
 
-Any new bot gets a unique `bot_id`, copies `analytics.js`, and shares the same Supabase + webhook env vars.
+Any new bot copies `alerts.js` and sets `BOT_ALERTS_WEBHOOK_URL` + `ALERTS_BOT_ID`.
 
 ---
 
-## Architecture
+## Architecture (v1)
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │ tilt-battle-    │     │ justthebuilder  │     │ dad             │
-│ royale          │     │  analytics.js   │     │ (tiltcheck-me)  │
-│  analytics.js   │     └────────┬────────┘     └────────┬────────┘
+│ royale          │     │  alerts.js      │     │ (tiltcheck-me)  │
+│  alerts.js      │     └────────┬────────┘     └────────┬────────┘
 └────────┬────────┘              │                       │
-         │    JSON event (fire-and-forget)              │
+         │         fire-and-forget POST (no await in hot path)
          └──────────────────────┼───────────────────────┘
                                 ▼
-              ┌─────────────────────────────────────┐
-              │  Sinks (parallel, non-blocking)        │
-              │  1. stdout → Fly logs                  │
-              │  2. Supabase bot_events insert         │
-              │  3. Discord webhook (filtered events)  │
-              └─────────────────────────────────────┘
-                                │
-              ┌─────────────────┴─────────────────┐
-              ▼                                   ▼
-     ┌─────────────────┐               ┌─────────────────┐
-     │ Supabase        │               │ #bot-alerts       │
-     │ bot_events      │               │ (private channel) │
-     └────────┬────────┘               └─────────────────┘
-              ▼
-     ┌─────────────────┐
-     │ Admin dashboard  │  (read-only, password/RLS)
-     │ installs, games, │
-     │ purchases, errors│
-     └─────────────────┘
+                    ┌───────────────────────┐
+                    │ BOT_ALERTS_WEBHOOK_URL │
+                    │ → #bot-alerts channel  │
+                    │   (bot test server)    │
+                    └───────────────────────┘
 ```
+
+**Also:** `console.log` JSON lines → Fly logs for debugging. No database in v1.
 
 ---
 
-## Event pipeline (`analytics.js`)
+## Alert module (`alerts.js`)
 
-### Event shape
+### API
+
+```javascript
+const { postAlert } = require('./alerts.js');
+
+postAlert('guild_install', { guildName, guildId });
+postAlert('purchase', { userId, skuLabel });
+postAlert('game_started', { era, players });
+postAlert('error', { context, message });
+```
+
+Fire-and-forget — never `await` in slash handlers; never throw on webhook failure.
+
+### Environment variables (per bot)
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `BOT_ALERTS_WEBHOOK_URL` | yes (prod) | Channel webhook in bot-test server |
+| `ALERTS_BOT_ID` | yes | Display name in messages, e.g. `tilt-battle-royale` |
+| `ALERTS_ENABLED` | no | Default `true`; set `false` in local dev |
+
+Fly secrets example:
+
+```bash
+flyctl secrets set -a tilt-battle-royale \
+  BOT_ALERTS_WEBHOOK_URL="https://discord.com/api/webhooks/..." \
+  ALERTS_BOT_ID=tilt-battle-royale
+```
+
+**Setup (one time):** In your bot-test Discord server → create `#bot-alerts` → Channel Settings → Integrations → Webhooks → New Webhook → copy URL.
+
+---
+
+## Event pipeline (v2 — deferred)
+
+<details>
+<summary>Supabase + dashboard (optional later)</summary>
+
+If you outgrow webhook-only, add `bot_events` table and dashboard per original design. `alerts.js` can gain a second sink without changing call sites.
+</details>
+
+### Event shape (stdout + future DB)
 
 ```json
 {
@@ -103,26 +133,6 @@ Any new bot gets a unique `bot_id`, copies `analytics.js`, and shares the same S
 - `event`: stable snake_case string (see catalog below)
 - `metadata`: bot-specific JSON; never store secrets or full PII
 - Logging is **async fire-and-forget** — never block gameplay or slash replies
-
-### Environment variables (per bot deployment)
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `ANALYTICS_BOT_ID` | yes | e.g. `tilt-battle-royale` |
-| `SUPABASE_URL` | yes | Shared Supabase project |
-| `SUPABASE_SERVICE_KEY` | yes | Service role (server-side only) |
-| `BOT_ALERTS_WEBHOOK_URL` | no | Private Discord channel webhook |
-| `ANALYTICS_ENABLED` | no | Default `true`; set `false` to disable sinks in dev |
-
-Fly secrets example:
-
-```bash
-flyctl secrets set -a tilt-battle-royale \
-  ANALYTICS_BOT_ID=tilt-battle-royale \
-  SUPABASE_URL=... \
-  SUPABASE_SERVICE_KEY=... \
-  BOT_ALERTS_WEBHOOK_URL=...
-```
 
 ---
 
@@ -168,9 +178,10 @@ Tag `metadata.module` (`suslink`, `justthetip`, `casino`, etc.). Reuse universal
 
 ---
 
-## Supabase schema
+## Supabase schema (v2 — deferred)
 
 ```sql
+-- Optional later; not required for webhook v1
 create table bot_events (
   id          uuid primary key default gen_random_uuid(),
   bot_id      text not null,
@@ -204,18 +215,9 @@ Optional: UptimeRobot on each bot's `/api/health` → separate uptime webhook (n
 
 ---
 
-## Admin dashboard (v1)
+## Admin dashboard (v2 — deferred)
 
-**Hosting:** Static site or tiny Next.js on Netlify/Vercel (can live in `tiltcheck-monorepo/apps/control-room` later).
-
-**Views:**
-
-- Bot filter (all `bot_id` values)
-- Last 50 events (paginated table)
-- Summary cards (7d): installs, games played, purchases, errors (24h)
-- Event detail: expand `metadata` JSON
-
-**Auth:** Simple password env var or Supabase magic link — not public.
+Read-only admin page on Supabase when webhook history isn't enough.
 
 ---
 
@@ -223,10 +225,10 @@ Optional: UptimeRobot on each bot's `/api/health` → separate uptime webhook (n
 
 | Phase | Bots | Deliverable |
 |-------|------|-------------|
-| **1** | `tilt-battle-royale` | `bot/analytics.js`, Supabase table, webhook, instrument `bot.js` |
-| **2** | `dad` (`tiltcheck-me`), `justthebuilder` | Copy `analytics.js`; instrument game + install events |
-| **3** | `tiltcheck-discord` (monorepo, optional) | `@tiltcheck/analytics` workspace package |
-| **4** | Dashboard UI | Read-only admin page on shared Supabase |
+| **1** | `tilt-battle-royale` | `bot/alerts.js`, webhook env on Fly, wire install / purchase / error / game events |
+| **2** | `dad`, `justthebuilder` | Copy `alerts.js`, same webhook URL, different `ALERTS_BOT_ID` |
+| **3** | `tiltcheck-discord` (optional) | TypeScript port of `alerts.js` |
+| **4** | Dashboard (optional) | Supabase + admin UI only if needed |
 
 ---
 
@@ -257,10 +259,10 @@ Optional: UptimeRobot on each bot's `/api/health` → separate uptime webhook (n
 
 ---
 
-## Success criteria
+## Success criteria (v1)
 
-1. New server install on Tilt Battle Royale posts to `#bot-alerts` within 5 seconds
-2. Trail Pass purchase posts to `#bot-alerts` with correct SKU label
-3. `/royale` game start and end appear in `bot_events` with correct metadata
-4. Interaction errors appear in dashboard within 10 seconds
-5. `analytics.js` is copy-pasteable into a second bot with only `ANALYTICS_BOT_ID` changed
+1. Bot added to a server → message in `#bot-alerts` within a few seconds
+2. Trail Pass purchase → 💰 message with user + SKU
+3. `/royale` game ends → optional info post (configurable; can skip to reduce noise)
+4. Interaction crash → 🔴 error post with command name
+5. `alerts.js` copy-pasteable to a second bot with only `ALERTS_BOT_ID` changed
