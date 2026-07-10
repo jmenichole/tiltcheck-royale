@@ -13,6 +13,11 @@ const {
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
 const { createGame, createCharacter, runDay, checkWinner } = require('./simulation.js');
+const {
+    getSupporterSkuId,
+    hasSupporterFromEntitlements,
+    supporterPrefix,
+} = require('./premium.js');
 
 requireEnv();
 const config = getConfig();
@@ -38,7 +43,9 @@ const COLOR_GOLD  = 0xffd700;
 
 function buildLobbyEmbed(game, secondsLeft) {
     const names = game.party.length > 0
-        ? game.party.map((c, i) => `\`${i + 1}.\` ${c.displayName} *(${c.profession})*`).join('\n')
+        ? game.party.map((c, i) =>
+            `\`${i + 1}.\` ${supporterPrefix(c.isSupporter)}${c.displayName} *(${c.profession})*`,
+        ).join('\n')
         : '*No pioneers yet. Be the first to board!*';
 
     return new EmbedBuilder()
@@ -105,12 +112,19 @@ function buildVictoryEmbed(text, winner) {
             { name: '💀 Final Kill Count', value: `${winner.kills} kill${winner.kills === 1 ? '' : 's'}`, inline: true },
             { name: '🪖 Profession', value: winner.profession, inline: true },
         );
+        if (winner.isSupporter) {
+            embed.addFields({
+                name: '⭐ Pioneer Supporter',
+                value: 'Thanks for supporting the trail — same fair game, extra gratitude.',
+                inline: false,
+            });
+        }
     }
     return embed;
 }
 
 function buildLobbyButtons(gameStarted = false) {
-    return new ActionRowBuilder().addComponents(
+    const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('join_wagon')
             .setLabel('🪙 Join the Wagon')
@@ -127,6 +141,15 @@ function buildLobbyButtons(gameStarted = false) {
             .setStyle(ButtonStyle.Danger)
             .setDisabled(gameStarted),
     );
+
+    const supportRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel('⭐ Pioneer Supporter')
+            .setStyle(ButtonStyle.Premium)
+            .setSKUId(getSupporterSkuId()),
+    );
+
+    return gameStarted ? [row] : [row, supportRow];
 }
 
 async function startSimulation(channelId, lobbyMessageId) {
@@ -153,7 +176,7 @@ async function startSimulation(channelId, lobbyMessageId) {
         const lobbyMsg = await channel.messages.fetch(lobbyMessageId);
         await lobbyMsg.edit({
             embeds: [buildLobbyEmbed(game, 0).setTitle(`🪖 ${BRAND} — DEPARTED!`).setDescription('The wagon has left. May the trail have mercy.')],
-            components: [buildLobbyButtons(true)],
+            components: buildLobbyButtons(true),
         });
     } catch (_) {}
 
@@ -211,7 +234,7 @@ async function startCountdown(channelId, lobbyMessageId, seconds) {
             if (msg) {
                 await msg.edit({
                     embeds: [buildLobbyEmbed(entry.game, entry.lobbySecondsLeft)],
-                    components: [buildLobbyButtons()],
+                    components: buildLobbyButtons(),
                 }).catch(() => {});
             }
         }
@@ -267,12 +290,14 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
 
         const seconds = interaction.options.getInteger('lobby_seconds') ?? 60;
         const game = createGame(channelId, interaction.user.id);
-        game.party.push(createCharacter(interaction.user));
+        const hostChar = createCharacter(interaction.user);
+        hostChar.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
+        game.party.push(hostChar);
 
         const embed = buildLobbyEmbed(game, seconds);
         const reply = await interaction.reply({
             embeds: [embed],
-            components: [buildLobbyButtons()],
+            components: buildLobbyButtons(),
             fetchReply: true,
         });
 
@@ -307,13 +332,14 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             return interaction.reply({ content: '❌ The wagon is full! (20 max)', ephemeral: true });
         }
         const character = createCharacter(user);
+        character.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
         game.party.push(character);
 
         const msg = await interaction.channel.messages.fetch(lobbyMessageId).catch(() => null);
         if (msg) {
             await msg.edit({
                 embeds: [buildLobbyEmbed(game, entry.lobbySecondsLeft)],
-                components: [buildLobbyButtons()],
+                components: buildLobbyButtons(),
             });
         }
 
@@ -334,7 +360,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         if (msg) {
             await msg.edit({
                 embeds: [buildLobbyEmbed(game, entry.lobbySecondsLeft)],
-                components: [buildLobbyButtons()],
+                components: buildLobbyButtons(),
             });
         }
 
