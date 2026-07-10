@@ -12,7 +12,11 @@ const {
     Events: DEvents,
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
-const { createGame, createCharacter, createBotCharacter, runDay, checkWinner } = require('./simulation.js');
+const { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase } = require('./simulation.js');
+const {
+    TICK_MS, QUIET_FLUSH_DAYS, isNotableEvent,
+    createQuietBuffer, extendQuietBuffer, quietBufferDaySpan, formatQuietSummary, getPhaseFlavor,
+} = require('./pacing.js');
 const {
     hasSupporterFromEntitlements,
     hasTrailPassAccess,
@@ -26,6 +30,8 @@ const {
     getDayThumbnail,
     pickSupportWink,
     formatTrailNarrative,
+    formatHighlightTitle,
+    buildPhaseEmbed,
     formatDayFooter,
     WAGON_ASCII,
     DEPART_ASCII,
@@ -214,6 +220,27 @@ function buildLobbyButtons(gameStarted = false) {
     return [row];
 }
 
+async function postQuietSummary(channel, game) {
+    if (!game.quietBuffer) return;
+    const line = formatQuietSummary(game.quietBuffer, game.party.length);
+    await channel.send({ content: line }).catch(() => {});
+    game.quietBuffer = null;
+}
+
+async function postPhaseTransition(channel, game, newPhase) {
+    const pack = getThemePack(game.eraId);
+    const eraName = getEra(game.eraId).name;
+    const alive = game.party.filter(c => c.alive).length;
+    const flavor = getPhaseFlavor(pack, newPhase);
+    await postQuietSummary(channel, game);
+    await channel.send({ embeds: [buildPhaseEmbed(newPhase, alive, eraName, flavor)] }).catch(() => {});
+}
+
+function partitionEvents(events) {
+    const notable = events.filter(isNotableEvent);
+    return { notable };
+}
+
 async function startSimulation(channelId, lobbyMessageId) {
     const entry = activeGames.get(channelId);
     if (!entry) return;
@@ -257,25 +284,61 @@ async function startSimulation(channelId, lobbyMessageId) {
         ),
     });
 
-    const TICK_MS = 4000;
-
     const tick = async () => {
         const result = checkWinner(game);
         if (result) {
             clearInterval(entry.simTimer);
             game.phase = 'ended';
+            await postQuietSummary(channel, game);
             await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
             activeGames.delete(channelId);
             return;
         }
 
-        const dayEvents = runDay(game);
-        const aliveAfter = game.party.filter(c => c.alive);
+        const prevTrailPhase = game.trailPhase;
+        const daysThisTick = game.trailPhase === 'final' ? 2 : 1;
+        let allEvents = [];
+        for (let d = 0; d < daysThisTick; d++) {
+            allEvents.push(...runDay(game));
+            if (checkWinner(game)) break;
+        }
 
+        const newPhase = syncPhase(game);
+        if (newPhase && newPhase !== prevTrailPhase) {
+            await postPhaseTransition(channel, game, newPhase);
+        } else if (game.trailPhase !== prevTrailPhase) {
+            await postPhaseTransition(channel, game, game.trailPhase);
+        }
+
+        const aliveAfter = game.party.filter(c => c.alive);
+        const { notable } = partitionEvents(allEvents);
+
+        if (notable.length === 0) {
+            const day = game.day;
+            const mi = game.distance;
+            if (!game.quietBuffer) {
+                game.quietBuffer = createQuietBuffer(day, mi, aliveAfter.length);
+            } else {
+                extendQuietBuffer(game.quietBuffer, day, mi, aliveAfter.length, game.weather);
+            }
+            if (quietBufferDaySpan(game.quietBuffer) >= QUIET_FLUSH_DAYS) {
+                await postQuietSummary(channel, game);
+            }
+            return;
+        }
+
+        await postQuietSummary(channel, game);
+
+        const landmark = getLandmark(game.distance, game.eraId);
+        const hasDeath = notable.some(e => e.type === 'death');
         const embed = buildDayEmbed(
-            game.day, dayEvents, game.distance, game.weather,
+            game.day, notable, game.distance, game.weather,
             game.rations, aliveAfter.length, game.party.length, game.eraId,
         );
+        embed.setTitle(formatHighlightTitle(game.day, notable, landmark.name));
+        if (hasDeath) {
+            embed.setThumbnail(getDayThumbnail(landmark, true));
+        }
         await channel.send({ embeds: [embed] }).catch(() => {});
     };
 
