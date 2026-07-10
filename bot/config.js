@@ -25,7 +25,7 @@ function getConfig() {
         discord: {
             token: process.env.DISCORD_BOT_TOKEN,
             clientId: process.env.DISCORD_CLIENT_ID,
-            guildId: process.env.DISCORD_GUILD_ID || '',
+            guildIds: parseIdList(process.env.DISCORD_GUILD_IDS || process.env.DISCORD_GUILD_ID || ''),
         },
         port,
         botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
@@ -33,6 +33,9 @@ function getConfig() {
         feedbackUrl: process.env.FEEDBACK_URL || '',
         storeUrl: `https://discord.com/application-directory/${process.env.DISCORD_CLIENT_ID}/store`,
         trailPassBypassUserIds: parseIdList(process.env.TRAIL_PASS_BYPASS_USER_IDS ?? ''),
+        soloTestUserIds: parseIdList(
+            process.env.SOLO_TEST_USER_IDS || process.env.TRAIL_PASS_BYPASS_USER_IDS || '',
+        ),
     };
 }
 

@@ -34,6 +34,40 @@ function createCharacter(discordUser, eraId = 'oregon-trail') {
         items: [...base.startItems],
         kills: 0,
         alive: true,
+        isBot: false,
+    };
+}
+
+const BOT_PIONEER_NAMES = [
+    'Clyde', 'Buck', 'Maureen', 'Zeke', 'Hattie', 'Jeb', 'Prudence', 'Rufus',
+    'Winifred', 'Grover', 'Eustace', 'Cordelia', 'Thaddeus', 'Myrtle', 'Orville',
+    'Beatrix', 'Cornelius', 'Daisy', 'Festus',
+];
+
+/** Fake pioneer for solo dev testing — not a real Discord user. */
+function createBotCharacter(slot, eraId = 'oregon-trail') {
+    const pack = getThemePack(eraId);
+    const professions = Object.keys(pack.classBonuses);
+    const profession = pick(professions);
+    const base = pack.classBonuses[profession];
+    const baseName = BOT_PIONEER_NAMES[slot % BOT_PIONEER_NAMES.length];
+    const suffix = slot >= BOT_PIONEER_NAMES.length
+        ? ` ${Math.floor(slot / BOT_PIONEER_NAMES.length) + 1}`
+        : '';
+    const displayName = `${baseName}${suffix}`;
+
+    return {
+        id: `solo-bot-${String(slot).padStart(3, '0')}`,
+        name: displayName.substring(0, 14),
+        displayName,
+        profession,
+        hp: base.maxHp,
+        maxHp: base.maxHp,
+        status: 'Healthy',
+        items: [...base.startItems],
+        kills: 0,
+        alive: true,
+        isBot: true,
     };
 }
 
@@ -321,4 +355,4 @@ function checkWinner(game) {
     return null;
 }
 
-module.exports = { createGame, createCharacter, runDay, checkWinner };
+module.exports = { createGame, createCharacter, createBotCharacter, runDay, checkWinner };

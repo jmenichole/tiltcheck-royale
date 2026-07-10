@@ -1,6 +1,9 @@
 /**
  * Register slash commands with Discord.
  * Run once: npm run deploy
+ *
+ * Always registers globally. If DISCORD_GUILD_IDS is set, clears guild-specific
+ * copies on those servers so /royale and /support do not appear twice.
  */
 
 require('dotenv').config();
@@ -30,6 +33,13 @@ const royaleCommand = new SlashCommandBuilder()
             .setMaxValue(180)
             .setRequired(false)
     )
+    .addIntegerOption(opt =>
+        opt.setName('bot_players')
+            .setDescription('Solo test: add fake pioneers (dev accounts only)')
+            .setMinValue(1)
+            .setMaxValue(19)
+            .setRequired(false)
+    )
     .toJSON();
 
 const supportCommand = new SlashCommandBuilder()
@@ -56,27 +66,31 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
 
 (async () => {
     try {
-        if (config.discord.guildId) {
-            console.log(`Registering commands for guild ${config.discord.guildId}...`);
-            await rest.put(
-                Routes.applicationGuildCommands(config.discord.clientId, config.discord.guildId),
-                { body: APP_COMMANDS },
-            );
-            console.log('✅ Guild commands registered — visible immediately in that server.');
-        } else {
-            console.log('Registering commands globally...');
-            const existing = await rest.get(Routes.applicationCommands(config.discord.clientId));
-            const preserved = preserveOtherCommands(existing);
-            if (preserved.length > 0) {
-                console.log(`Preserving ${preserved.length} existing command(s): ${preserved.map(c => c.name).join(', ')}`);
+        for (const guildId of config.discord.guildIds) {
+            try {
+                console.log(`Clearing guild-specific commands on ${guildId} (prevents duplicates)...`);
+                await rest.put(
+                    Routes.applicationGuildCommands(config.discord.clientId, guildId),
+                    { body: [] },
+                );
+                console.log(`✅ Guild ${guildId} — using global /royale and /support only.`);
+            } catch (err) {
+                console.warn(`⚠️  Guild ${guildId} skipped: ${err.message}`);
             }
-            await rest.put(
-                Routes.applicationCommands(config.discord.clientId),
-                { body: [...preserved, ...APP_COMMANDS] },
-            );
-            console.log('✅ Global commands registered — /royale and /support');
-            console.log('   Discord may take up to ~1 hour to propagate globally.');
         }
+
+        console.log('Registering commands globally...');
+        const existing = await rest.get(Routes.applicationCommands(config.discord.clientId));
+        const preserved = preserveOtherCommands(existing);
+        if (preserved.length > 0) {
+            console.log(`Preserving ${preserved.length} existing command(s): ${preserved.map(c => c.name).join(', ')}`);
+        }
+        await rest.put(
+            Routes.applicationCommands(config.discord.clientId),
+            { body: [...preserved, ...APP_COMMANDS] },
+        );
+        console.log('✅ Global commands registered — works in any server the bot is in.');
+        console.log('   Discord may take up to ~1 hour to propagate globally.');
         console.log('Start the bot with: npm start');
     } catch (error) {
         console.error('❌ Failed to register commands:', error);

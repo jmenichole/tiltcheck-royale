@@ -12,7 +12,7 @@ const {
     Events: DEvents,
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
-const { createGame, createCharacter, runDay, checkWinner } = require('./simulation.js');
+const { createGame, createCharacter, createBotCharacter, runDay, checkWinner } = require('./simulation.js');
 const {
     hasSupporterFromEntitlements,
     hasTrailPassAccess,
@@ -55,16 +55,22 @@ const COLOR_TRAIL = COLORS.trail;
 const COLOR_GOLD  = COLORS.gold;
 
 function formatRosterLine(c, index) {
+    const botTag = c.isBot ? ' 🤖' : '';
     const tag = c.isSupporter ? ' *(packed extra bacon)*' : '';
-    return `\`${index + 1}.\` ${c.displayName} *(${c.profession})*${tag}`;
+    return `\`${index + 1}.\` ${c.displayName} *(${c.profession})*${tag}${botTag}`;
 }
 
 function buildLobbyEmbed(game, secondsLeft) {
     const era = getEra(game.eraId);
     const pack = getThemePack(game.eraId);
+    const botCount = game.party.filter(c => c.isBot).length;
     const names = game.party.length > 0
         ? game.party.map((c, i) => formatRosterLine(c, i)).join('\n')
         : '*No pioneers yet. Be the first to board!*';
+
+    const soloNote = botCount > 0
+        ? `\n🤖 **Solo test:** ${botCount} fake pioneer${botCount === 1 ? '' : 's'} boarded.\n`
+        : '';
 
     return new EmbedBuilder()
         .setColor(COLOR_TRAIL)
@@ -74,8 +80,9 @@ function buildLobbyEmbed(game, secondsLeft) {
             `${DEPART_ASCII}\n` +
             `*${pack.lobbyTagline || 'The trail is long.'}*\n` +
             `**Era:** ${era.name}\n` +
-            `The trail is long. **Only one pioneer survives.**\n\n` +
-            `⏳ **Departing in ${secondsLeft} seconds...**\n` +
+            `The trail is long. **Only one pioneer survives.**\n` +
+            soloNote +
+            `\n⏳ **Departing in ${secondsLeft} seconds...**\n` +
             `> *${pickSupportWink()}*`
         )
         .addFields({ name: `🪙 Party roster (${game.party.length}/20)`, value: names })
@@ -357,7 +364,24 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
 
         const seconds = interaction.options.getInteger('lobby_seconds') ?? 60;
         const eraId = interaction.options.getString('era') ?? 'oregon-trail';
+        const botPlayers = interaction.options.getInteger('bot_players') ?? 0;
         const era = getEra(eraId);
+
+        if (botPlayers > 0) {
+            const allowed = config.soloTestUserIds.map(String).includes(String(interaction.user.id));
+            if (!allowed) {
+                return interaction.reply({
+                    content: '❌ `bot_players` is for solo testing and is not enabled for your account.',
+                    ephemeral: true,
+                });
+            }
+            if (botPlayers > 19) {
+                return interaction.reply({
+                    content: '❌ Max 19 bot players (20 total including you).',
+                    ephemeral: true,
+                });
+            }
+        }
 
         if (era.requiresPass && !hasTrailPassAccess(
             interaction.user.id,
@@ -377,6 +401,10 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         const hostChar = createCharacter(interaction.user, eraId);
         hostChar.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
         game.party.push(hostChar);
+
+        for (let i = 0; i < botPlayers; i++) {
+            game.party.push(createBotCharacter(i, eraId));
+        }
 
         const embed = buildLobbyEmbed(game, seconds);
         const reply = await interaction.reply({
