@@ -100,6 +100,10 @@ function createGame(channelId, hostId, eraId = 'oregon-trail') {
         trailPhase: 'departure',
         quietBuffer: null,
         knownStatuses: {},
+        pendingChoice: null,
+        pendingRiver: null,
+        flags: { groupChoiceDone: false, personalChoiceDone: false },
+        modifiers: { combatBias: 0, diseaseBias: 0, milesBonus: 0, ticksRemaining: 0 },
         party: [],
         day: 0,
         distance: 0,
@@ -124,7 +128,8 @@ function runDay(game) {
     const phase = getPhase(game.distance);
     const mult = getPhaseMultipliers(phase);
     const prevDistance = game.distance;
-    const miles = Math.round(rand(14, 28) * mult.miles);
+    const miles = Math.round(rand(14, 28) * mult.miles) + (game.modifiers.milesBonus || 0);
+    game.modifiers.milesBonus = 0;
     game.distance += miles;
     game.trailPhase = getPhase(game.distance);
 
@@ -209,35 +214,12 @@ function runDay(game) {
     if (stillAlive.length <= 1) return events;
 
     for (const river of Events.rivers) {
-        const key = `river${Events.rivers.indexOf(river) + 1}Done`;
+        const idx = Events.rivers.indexOf(river);
+        const key = `river${idx + 1}Done`;
         if (!game[key] && game.distance >= river.distance && game.distance <= river.distance + 25) {
             game[key] = true;
+            game.pendingRiver = { index: idx, name: river.name, river, key };
             events.push({ type: 'day', text: `**River crossing: ${river.name}**`, river: true });
-
-            const roll = Math.random();
-            const victim = pick(stillAlive);
-            let outcome;
-
-            if (roll < 0.25) outcome = river.outcomes[0];
-            else if (roll < 0.60) outcome = river.outcomes[1];
-            else outcome = river.outcomes[2];
-
-            const msg = outcome.msg
-                .replace('{v}', `**${victim.name}**`)
-                .replace('{dmg}', outcome.dmg || 0);
-
-            if (outcome.type === 'drown') {
-                events.push(...killCharacter(victim, `drowning in the ${river.name}`));
-                events.push({ type: 'death', text: msg });
-            } else if (outcome.type === 'damage') {
-                victim.hp -= outcome.dmg;
-                game.rations = Math.max(0, game.rations - (outcome.rationLoss || 0));
-                events.push({ type: 'combat', text: msg });
-                if (victim.hp <= 0) events.push(...killCharacter(victim, `injuries at the ${river.name}`));
-            } else {
-                events.push({ type: 'passive', text: msg });
-            }
-
             return events;
         }
     }
@@ -246,11 +228,12 @@ function runDay(game) {
     if (aliveNow.length < 2) return events;
 
     const w = {
-        combat: Math.min(0.95, weights.combat * mult.combat),
-        disease: Math.min(0.95, weights.disease * mult.disease),
+        combat: Math.min(0.95, weights.combat * mult.combat + (game.modifiers.combatBias || 0)),
+        disease: Math.min(0.95, weights.disease * mult.disease + (game.modifiers.diseaseBias || 0)),
         loot: weights.loot,
         hunt: weights.hunt,
     };
+    if (game.modifiers.ticksRemaining > 0) game.modifiers.ticksRemaining--;
 
     if (mult.forceCombat && aliveNow.length >= 2) {
         events.push(...resolveCombat(aliveNow, pack));
@@ -409,4 +392,48 @@ function checkWinner(game) {
     return null;
 }
 
-module.exports = { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase };
+function resolveRiverChoice(game, choiceId) {
+    const pending = game.pendingRiver;
+    if (!pending) return [];
+
+    const { river, name } = pending;
+    game.pendingRiver = null;
+    const stillAlive = game.party.filter(c => c.alive);
+    if (stillAlive.length === 0) return [];
+
+    const events = [];
+    const victim = pick(stillAlive);
+    let roll = Math.random();
+
+    if (choiceId === 'ford') {
+        if (roll < 0.25) {
+            events.push(...killCharacter(victim, `drowning in the ${name}`));
+            events.push({ type: 'death', notable: true, text: `**${victim.name}** drowned fording **${name}**.` });
+        } else if (roll < 0.75) {
+            const dmg = rand(15, 35);
+            victim.hp -= dmg;
+            events.push({ type: 'combat', notable: true, text: `**${victim.name}** struggled crossing **${name}**. **-${dmg} HP**.` });
+            if (victim.hp <= 0) events.push(...killCharacter(victim, `injuries at the ${name}`));
+        } else {
+            events.push({ type: 'passive', notable: true, text: `The party forded **${name}** without loss.` });
+        }
+    } else if (choiceId === 'caulk') {
+        if (roll < 0.15) {
+            game.rations = Math.max(0, game.rations - 30);
+            events.push({ type: 'passive', notable: true, text: `Caulk failed at **${name}**. **-30 lbs** rations lost.` });
+        } else if (roll < 0.85) {
+            events.push({ type: 'passive', notable: true, text: `The wagons floated **${name}** safely.` });
+        } else {
+            events.push(...killCharacter(victim, `drowning in the ${name}`));
+            events.push({ type: 'death', notable: true, text: `**${victim.name}** capsized at **${name}**.` });
+        }
+    } else {
+        events.push({ type: 'passive', notable: true, text: `The party waited out **${name}**. The trail grows colder.` });
+        const extra = runDay(game);
+        events.push(...extra);
+    }
+
+    return events;
+}
+
+module.exports = { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase, resolveRiverChoice };

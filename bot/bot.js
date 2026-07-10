@@ -12,7 +12,12 @@ const {
     Events: DEvents,
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
-const { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase } = require('./simulation.js');
+const { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase, resolveRiverChoice } = require('./simulation.js');
+const {
+    CHOICE_MS, buildChoiceEmbed, buildChoiceButtons,
+    applyGroupChoice, applyPersonalChoice, formatGroupResult,
+    checkChoiceTriggers, botAutoVote, tallyGroupVotes, alivePlayers,
+} = require('./choices.js');
 const {
     TICK_MS, QUIET_FLUSH_DAYS, isNotableEvent,
     createQuietBuffer, extendQuietBuffer, quietBufferDaySpan, formatQuietSummary, getPhaseFlavor,
@@ -241,6 +246,109 @@ function partitionEvents(events) {
     return { notable };
 }
 
+async function postNotableEvents(channel, game, events) {
+    const { notable } = partitionEvents(events);
+    if (notable.length === 0) return;
+
+    await postQuietSummary(channel, game);
+    const aliveAfter = game.party.filter(c => c.alive);
+    const landmark = getLandmark(game.distance, game.eraId);
+    const hasDeath = notable.some(e => e.type === 'death');
+    const embed = buildDayEmbed(
+        game.day, notable, game.distance, game.weather,
+        game.rations, aliveAfter.length, game.party.length, game.eraId,
+    );
+    embed.setTitle(formatHighlightTitle(game.day, notable, landmark.name));
+    if (hasDeath) embed.setThumbnail(getDayThumbnail(landmark, true));
+    await channel.send({ embeds: [embed] }).catch(() => {});
+}
+
+async function finishChoiceAndResume(channelId, entry, channel) {
+    entry.simTimer = setInterval(entry.tickFn, TICK_MS);
+}
+
+async function resolvePendingChoice(channelId, entry, channel) {
+    const { game } = entry;
+    const pc = game.pendingChoice;
+    if (!pc) return;
+
+    if (entry.choiceTimeout) {
+        clearTimeout(entry.choiceTimeout);
+        entry.choiceTimeout = null;
+    }
+
+    let events = [];
+    if (pc.type === 'group') {
+        botAutoVote(game, pc);
+        const { winner, counts } = tallyGroupVotes(pc.votes);
+        events = applyGroupChoice(game, winner);
+        await channel.send({ content: formatGroupResult(winner, counts) }).catch(() => {});
+    } else if (pc.type === 'personal') {
+        botAutoVote(game, pc);
+        for (const [userId, choiceId] of pc.votes) {
+            events.push(...applyPersonalChoice(game, userId, choiceId));
+        }
+        game.flags.personalChoiceDone = true;
+        await channel.send({ content: '**Personal choices locked in.**' }).catch(() => {});
+    } else if (pc.type === 'river') {
+        events = resolveRiverChoice(game, pc.riverChoice || 'wait');
+    }
+
+    game.pendingChoice = null;
+    try {
+        const msg = await channel.messages.fetch(pc.messageId);
+        await msg.edit({ components: [] });
+    } catch (_) {}
+
+    await postNotableEvents(channel, game, events);
+
+    const result = checkWinner(game);
+    if (result) {
+        clearInterval(entry.simTimer);
+        game.phase = 'ended';
+        await postQuietSummary(channel, game);
+        await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
+        activeGames.delete(channelId);
+        return;
+    }
+
+    await finishChoiceAndResume(channelId, entry, channel);
+}
+
+async function startChoiceWindow(channelId, entry, channel, type, extra = {}) {
+    clearInterval(entry.simTimer);
+
+    const { game } = entry;
+    const embed = buildChoiceEmbed(type, game, extra);
+    const msg = await channel.send({
+        embeds: [embed],
+        components: buildChoiceButtons(type),
+    });
+
+    game.pendingChoice = {
+        type,
+        messageId: msg.id,
+        deadline: Date.now() + CHOICE_MS,
+        votes: new Map(),
+        riverChoice: null,
+    };
+
+    entry.choiceTimeout = setTimeout(() => {
+        resolvePendingChoice(channelId, entry, channel).catch(err => console.error('Choice timeout error:', err));
+    }, CHOICE_MS);
+
+    if (type === 'group' || type === 'personal') {
+        setTimeout(() => {
+            if (!game.pendingChoice || game.pendingChoice.messageId !== msg.id) return;
+            botAutoVote(game, game.pendingChoice);
+            const alive = alivePlayers(game);
+            if (alive.every(c => game.pendingChoice.votes.has(c.id))) {
+                resolvePendingChoice(channelId, entry, channel).catch(err => console.error('Choice resolve error:', err));
+            }
+        }, CHOICE_MS - 2000);
+    }
+}
+
 async function startSimulation(channelId, lobbyMessageId) {
     const entry = activeGames.get(channelId);
     if (!entry) return;
@@ -285,6 +393,8 @@ async function startSimulation(channelId, lobbyMessageId) {
     });
 
     const tick = async () => {
+        if (game.pendingChoice) return;
+
         const result = checkWinner(game);
         if (result) {
             clearInterval(entry.simTimer);
@@ -292,6 +402,12 @@ async function startSimulation(channelId, lobbyMessageId) {
             await postQuietSummary(channel, game);
             await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
             activeGames.delete(channelId);
+            return;
+        }
+
+        const preTrigger = checkChoiceTriggers(game);
+        if (preTrigger) {
+            await startChoiceWindow(channelId, entry, channel, preTrigger);
             return;
         }
 
@@ -306,8 +422,22 @@ async function startSimulation(channelId, lobbyMessageId) {
         const newPhase = syncPhase(game);
         if (newPhase && newPhase !== prevTrailPhase) {
             await postPhaseTransition(channel, game, newPhase);
+            if (newPhase === 'killzone' && !game.flags.personalChoiceDone) {
+                await startChoiceWindow(channelId, entry, channel, 'personal');
+                return;
+            }
         } else if (game.trailPhase !== prevTrailPhase) {
             await postPhaseTransition(channel, game, game.trailPhase);
+            if (game.trailPhase === 'killzone' && !game.flags.personalChoiceDone) {
+                await startChoiceWindow(channelId, entry, channel, 'personal');
+                return;
+            }
+        }
+
+        if (game.pendingRiver) {
+            await postNotableEvents(channel, game, allEvents);
+            await startChoiceWindow(channelId, entry, channel, 'river', { riverName: game.pendingRiver.name });
+            return;
         }
 
         const aliveAfter = game.party.filter(c => c.alive);
@@ -327,21 +457,10 @@ async function startSimulation(channelId, lobbyMessageId) {
             return;
         }
 
-        await postQuietSummary(channel, game);
-
-        const landmark = getLandmark(game.distance, game.eraId);
-        const hasDeath = notable.some(e => e.type === 'death');
-        const embed = buildDayEmbed(
-            game.day, notable, game.distance, game.weather,
-            game.rations, aliveAfter.length, game.party.length, game.eraId,
-        );
-        embed.setTitle(formatHighlightTitle(game.day, notable, landmark.name));
-        if (hasDeath) {
-            embed.setThumbnail(getDayThumbnail(landmark, true));
-        }
-        await channel.send({ embeds: [embed] }).catch(() => {});
+        await postNotableEvents(channel, game, allEvents);
     };
 
+    entry.tickFn = tick;
     entry.simTimer = setInterval(tick, TICK_MS);
 }
 
@@ -384,6 +503,8 @@ function shutdown() {
     for (const entry of activeGames.values()) {
         if (entry.countdownTimer) clearInterval(entry.countdownTimer);
         if (entry.simTimer) clearInterval(entry.simTimer);
+        if (entry.choiceTimeout) clearTimeout(entry.choiceTimeout);
+        if (entry.game) entry.game.pendingChoice = null;
     }
     activeGames.clear();
     server.close();
@@ -496,6 +617,49 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
 
     const channelId = interaction.channelId;
     const entry = activeGames.get(channelId);
+
+    if (interaction.customId.startsWith('choice_') && entry?.game?.phase === 'running') {
+        const user = interaction.user;
+        const game = entry.game;
+        const pc = game.pendingChoice;
+        if (!pc) {
+            return interaction.reply({ content: '❌ That choice window closed.', ephemeral: true });
+        }
+
+        const parts = interaction.customId.split(':');
+        const type = parts[1];
+        const choiceId = parts[2];
+        if (pc.type !== type) {
+            return interaction.reply({ content: '❌ That choice window closed.', ephemeral: true });
+        }
+
+        const pioneer = game.party.find(c => c.id === user.id && c.alive);
+        if (!pioneer && type !== 'river') {
+            return interaction.reply({ content: '❌ Only living pioneers can choose.', ephemeral: true });
+        }
+
+        if (type === 'river') {
+            const host = game.party.find(c => c.id === game.hostId && c.alive);
+            if (host && user.id !== host.id) {
+                return interaction.reply({ content: '❌ Only the wagon leader picks the crossing.', ephemeral: true });
+            }
+            pc.riverChoice = choiceId;
+            await interaction.deferUpdate();
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (channel) await resolvePendingChoice(channelId, entry, channel);
+            return;
+        }
+
+        pc.votes.set(user.id, choiceId);
+        await interaction.reply({ content: '✅ Choice locked in.', ephemeral: true });
+
+        const alive = alivePlayers(game);
+        if (alive.every(c => pc.votes.has(c.id))) {
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (channel) await resolvePendingChoice(channelId, entry, channel);
+        }
+        return;
+    }
 
     if (!entry || entry.game.phase !== 'lobby') {
         return interaction.reply({ content: '❌ No active lobby in this channel.', ephemeral: true });
