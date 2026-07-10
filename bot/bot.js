@@ -14,24 +14,21 @@ const {
 const { requireEnv, getConfig } = require('./config.js');
 const { createGame, createCharacter, runDay, checkWinner } = require('./simulation.js');
 const {
-    getSupporterSkuId,
     hasSupporterFromEntitlements,
-    supporterPrefix,
+    hasTrailPassAccess,
 } = require('./premium.js');
+const { getEra, getLandmark, getThemePack } = require('./themes/index.js');
 const {
     COLORS,
-    getLandmark,
     pickDayHeader,
     formatDayTitle,
     dayEmbedColor,
     getDayThumbnail,
-    pickTrailFooter,
-    weatherLine,
-    formatTrailLog,
-    progressBar,
+    pickSupportWink,
+    formatTrailNarrative,
+    formatDayFooter,
     WAGON_ASCII,
     DEPART_ASCII,
-    VICTORY_ASCII,
     LOBBY_THUMBNAIL,
     VICTORY_THUMBNAIL,
 } = require('./trail-theme.js');
@@ -57,11 +54,16 @@ const server = http.createServer(app);
 const COLOR_TRAIL = COLORS.trail;
 const COLOR_GOLD  = COLORS.gold;
 
+function formatRosterLine(c, index) {
+    const tag = c.isSupporter ? ' *(packed extra bacon)*' : '';
+    return `\`${index + 1}.\` ${c.displayName} *(${c.profession})*${tag}`;
+}
+
 function buildLobbyEmbed(game, secondsLeft) {
+    const era = getEra(game.eraId);
+    const pack = getThemePack(game.eraId);
     const names = game.party.length > 0
-        ? game.party.map((c, i) =>
-            `\`${i + 1}.\` ${supporterPrefix(c.isSupporter)}${c.displayName} *(${c.profession})*`,
-        ).join('\n')
+        ? game.party.map((c, i) => formatRosterLine(c, i)).join('\n')
         : '*No pioneers yet. Be the first to board!*';
 
     return new EmbedBuilder()
@@ -70,9 +72,11 @@ function buildLobbyEmbed(game, secondsLeft) {
         .setDescription(
             `${WAGON_ASCII}\n` +
             `${DEPART_ASCII}\n` +
-            `*Independence, Missouri → Oregon Territory*\n` +
+            `*${pack.lobbyTagline || 'The trail is long.'}*\n` +
+            `**Era:** ${era.name}\n` +
             `The trail is long. **Only one pioneer survives.**\n\n` +
-            `⏳ **Departing in ${secondsLeft} seconds...**`
+            `⏳ **Departing in ${secondsLeft} seconds...**\n` +
+            `> *${pickSupportWink()}*`
         )
         .addFields({ name: `🪙 Party roster (${game.party.length}/20)`, value: names })
         .setThumbnail(LOBBY_THUMBNAIL)
@@ -80,41 +84,42 @@ function buildLobbyEmbed(game, secondsLeft) {
         .setTimestamp();
 }
 
-function buildDayEmbed(day, events, distance, weather, rations, aliveCount, total) {
-    const landmark = getLandmark(distance);
+function buildDayEmbed(day, events, distance, weather, rations, aliveCount, total, eraId) {
+    const landmark = getLandmark(distance, eraId);
     const hasDeath = events.some(e => e.type === 'death');
     const header = pickDayHeader(day, weather, events, landmark);
+    const eraName = getEra(eraId).name;
 
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setColor(dayEmbedColor(weather, hasDeath))
         .setTitle(formatDayTitle(header, day))
         .setDescription(
             `*${header.flavor}*\n\n` +
-            `${formatTrailLog(events)}\n` +
-            `*${weatherLine(weather)}*\n` +
-            `📍 **Near:** ${landmark.name}`
+            formatTrailNarrative(events)
         )
-        .setThumbnail(getDayThumbnail(landmark, hasDeath))
-        .addFields(
-            { name: '🗺️ Trail progress', value: `\`${progressBar(distance)}\``, inline: false },
-            { name: '🍖 Rations', value: `${Math.max(0, rations)} lbs`, inline: true },
-            { name: '💀 Alive', value: `${aliveCount} / ${total}`, inline: true },
-            { name: '🌤️ Conditions', value: weather, inline: true },
-        )
-        .setFooter({ text: pickTrailFooter() })
+        .setFooter({
+            text: formatDayFooter(distance, weather, rations, aliveCount, total, landmark.name, eraName),
+        })
         .setTimestamp();
+
+    if (hasDeath) {
+        embed.setThumbnail(getDayThumbnail(landmark, true));
+    }
+
+    return embed;
 }
 
-function buildVictoryEmbed(text, winner) {
-    let footer = `${FOOTER} — The trail remembers you.`;
-    if (!winner?.isSupporter) {
-        footer += ' • ⭐ Pioneer Supporter helps fund new modes';
-    }
+function buildVictoryEmbed(text, winner, eraId = 'oregon-trail') {
+    const pack = getThemePack(eraId);
+    const banner = pack.victoryBanner || '**★ Trail Complete ★**';
+    const footer = winner?.isSupporter
+        ? `${FOOTER} — The oxen remember you fondly.`
+        : `${FOOTER} — ${pickSupportWink()}`;
 
     const embed = new EmbedBuilder()
         .setColor(COLOR_GOLD)
-        .setTitle('🏆 TRAIL COMPLETE — FINAL SCORE')
-        .setDescription(`${VICTORY_ASCII}\n${text}`)
+        .setTitle('🏆 Trail Complete')
+        .setDescription(`${banner}\n\n${text}`)
         .setThumbnail(VICTORY_THUMBNAIL)
         .setTimestamp()
         .setFooter({ text: footer });
@@ -126,8 +131,8 @@ function buildVictoryEmbed(text, winner) {
         );
         if (winner.isSupporter) {
             embed.addFields({
-                name: '⭐ Pioneer Supporter',
-                value: 'Thanks for supporting the trail — same fair game, extra gratitude.',
+                name: '🐂 Spare Oxen Club',
+                value: 'You brought a second ox nobody asked for. The trail salutes you.',
                 inline: false,
             });
         }
@@ -147,9 +152,11 @@ function buildSupportEmbed() {
             ? `→ Share here: ${config.feedbackUrl}`
             : '→ Use `/support message:your idea` or post in the support server.',
         '',
-        '**Support development** — optional **Pioneer Supporter** subscription.',
-        '→ Same fair gameplay for everyone — helps fund new trail modes.',
-        `→ [Open the store](${config.storeUrl})`,
+        '**Trail Pass** — unlock all trail eras forever (host-only).',
+        `→ [Get Trail Pass](${config.storeUrl})`,
+        '',
+        '**Feed the oxen** — optional Pioneer Supporter tip jar. Zero gameplay perks.',
+        `→ [General store](${config.storeUrl})`,
     ];
 
     return new EmbedBuilder()
@@ -158,15 +165,6 @@ function buildSupportEmbed() {
         .setDescription(lines.join('\n'))
         .setFooter({ text: 'We read every suggestion — thanks for playing!' })
         .setTimestamp();
-}
-
-function buildSupportButtons() {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setLabel('⭐ Pioneer Supporter')
-            .setStyle(ButtonStyle.Premium)
-            .setSKUId(getSupporterSkuId()),
-    );
 }
 
 async function handleSupportCommand(interaction) {
@@ -184,7 +182,6 @@ async function handleSupportCommand(interaction) {
 
     await interaction.reply({
         embeds: [embed],
-        components: [buildSupportButtons()],
         ephemeral: true,
     });
 }
@@ -208,14 +205,7 @@ function buildLobbyButtons(gameStarted = false) {
             .setDisabled(gameStarted),
     );
 
-    const supportRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setLabel('⭐ Pioneer Supporter')
-            .setStyle(ButtonStyle.Premium)
-            .setSKUId(getSupporterSkuId()),
-    );
-
-    return gameStarted ? [row] : [row, supportRow];
+    return [row];
 }
 
 async function startSimulation(channelId, lobbyMessageId) {
@@ -268,7 +258,7 @@ async function startSimulation(channelId, lobbyMessageId) {
         if (result) {
             clearInterval(entry.simTimer);
             game.phase = 'ended';
-            await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner)] });
+            await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
             activeGames.delete(channelId);
             return;
         }
@@ -278,7 +268,7 @@ async function startSimulation(channelId, lobbyMessageId) {
 
         const embed = buildDayEmbed(
             game.day, dayEvents, game.distance, game.weather,
-            game.rations, aliveAfter.length, game.party.length,
+            game.rations, aliveAfter.length, game.party.length, game.eraId,
         );
         await channel.send({ embeds: [embed] }).catch(() => {});
     };
@@ -366,8 +356,25 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         }
 
         const seconds = interaction.options.getInteger('lobby_seconds') ?? 60;
-        const game = createGame(channelId, interaction.user.id);
-        const hostChar = createCharacter(interaction.user);
+        const eraId = interaction.options.getString('era') ?? 'oregon-trail';
+        const era = getEra(eraId);
+
+        if (era.requiresPass && !hasTrailPassAccess(
+            interaction.user.id,
+            interaction.entitlements,
+            config.trailPassBypassUserIds,
+        )) {
+            return interaction.reply({
+                content: (
+                    `🔒 **${era.name}** requires **Trail Pass** — unlock all trail eras forever.\n` +
+                    `→ [Open the store](${config.storeUrl})`
+                ),
+                ephemeral: true,
+            });
+        }
+
+        const game = createGame(channelId, interaction.user.id, eraId);
+        const hostChar = createCharacter(interaction.user, eraId);
         hostChar.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
         game.party.push(hostChar);
 
@@ -412,7 +419,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         if (game.party.length >= 20) {
             return interaction.reply({ content: '❌ The wagon is full! (20 max)', ephemeral: true });
         }
-        const character = createCharacter(user);
+        const character = createCharacter(user, game.eraId);
         character.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
         game.party.push(character);
 
@@ -425,7 +432,9 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         }
 
         return interaction.reply({
-            content: `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** from Independence.`,
+            content: character.isSupporter
+                ? `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** — swears the oxen look better fed already.`
+                : `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** from Independence.`,
             ephemeral: false,
         });
     }
@@ -457,7 +466,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         return startSimulation(channelId, lobbyMessageId);
     }
     } catch (err) {
-        console.error('Interaction error:', err);
+        console.error('Interaction error:', err.message || err);
         if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ Something went wrong. Try again in a moment.', ephemeral: true }).catch(() => {});
         }

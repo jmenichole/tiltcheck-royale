@@ -76,6 +76,24 @@ const TRAIL_FOOTERS = [
     'You may die of dysentery. • Parody',
 ];
 
+/** Dry OT-style lines — occasional wink at `/support`, never a hard sell. */
+const SUPPORT_WINKS = [
+    'The oxen union says tips are optional. `/support` if you feel guilty.',
+    'Spare wagon wheel donations accepted. No gameplay advantage. Obviously.',
+    'This trail runs on beans, spite, and the kindness of strangers.',
+    'You may die of dysentery. Your wallet might survive.',
+    'General store is `/support`. We sell nothing useful on purpose.',
+    'Rations are simulated. Developer snacks are not.',
+    'Tip the oxen. They cannot read Stripe receipts.',
+    'Fort Kearney gift shop is closed. `/support` is the gift shop.',
+    'No pay-to-win. Pay-to-laugh is also not a thing. Yet.',
+    'The trail remembers tippers. The trail also forgets everything else.',
+];
+
+function pickSupportWink() {
+    return SUPPORT_WINKS[Math.floor(Math.random() * SUPPORT_WINKS.length)];
+}
+
 const HEADER_FLAVORS = {
     ford: [
         'The wagons line up at the bank. How deep is it?',
@@ -104,22 +122,36 @@ const HEADER_FLAVORS = {
 };
 
 const DAY_HEADERS = {
-    ford:    { emoji: '🌊', label: 'FORDING THE RIVER' },
-    hunt:    { emoji: '🏹', label: 'HUNT FOR FOOD' },
-    rest:    { emoji: '⛺', label: 'REST HERE' },
-    travel:  { emoji: '🚶', label: 'CONTINUE ON TRAIL' },
-    storm:   { emoji: '⛈️', label: 'STORM ON THE TRAIL' },
-    burial:  { emoji: '⚰️', label: 'BURIAL ON THE TRAIL' },
+    ford:    { label: 'Fording the River' },
+    hunt:    { label: 'Hunt for Food' },
+    rest:    { label: 'Rest Here' },
+    travel:  { label: 'Continue on Trail' },
+    storm:   { label: 'Storm on the Trail' },
+    burial:  { label: 'Burial on the Trail' },
 };
 
-const ICONS = {
-    day: '📅',
+const EVENT_ICONS = {
     combat: '⚔️',
     death: '☠️',
-    disease: '🤢',
+    disease: '🤒',
     item: '📦',
-    passive: '📜',
+    passive: '🌾',
 };
+
+function stripLeadingEmoji(text) {
+    return text.replace(/^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D]+/u, '').trim();
+}
+
+function formatDayTitle(header, day) {
+    if (header.label === `Day ${day}` || header.label === `DAY ${day}`) {
+        return `Day ${day}`;
+    }
+    return `Day ${day} — ${header.label}`;
+}
+
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 function pickFlavor(key) {
     const lines = HEADER_FLAVORS[key];
@@ -156,14 +188,9 @@ function pickDayHeader(day, weather, events, landmark) {
     }
 
     return {
-        emoji: '📅',
-        label: `DAY ${day}`,
+        label: `Day ${day}`,
         flavor: weatherLine(weather),
     };
-}
-
-function formatDayTitle(header, day) {
-    return `${header.emoji} ${header.label} — Day ${day}`;
 }
 
 function dayEmbedColor(weather, hasDeath) {
@@ -177,15 +204,6 @@ function getDayThumbnail(landmark, hasDeath) {
     return landmark.thumbnail || LOBBY_THUMBNAIL;
 }
 
-function getLandmark(distance) {
-    let current = LANDMARKS[0];
-    for (const mark of LANDMARKS) {
-        if (distance >= mark.mi) current = mark;
-        else break;
-    }
-    return current;
-}
-
 function pickTrailFooter() {
     return TRAIL_FOOTERS[Math.floor(Math.random() * TRAIL_FOOTERS.length)];
 }
@@ -194,23 +212,35 @@ function weatherLine(weather) {
     return WEATHER_FLAVOR[weather] || 'Another day on the Oregon Trail.';
 }
 
-/** Monospace trail log block for embed descriptions. */
-function formatTrailLog(events) {
+/** Rumble-style narrative — prose with bold names (no code blocks). */
+function formatTrailNarrative(events) {
     const lines = events
         .filter((e) => e.type !== 'day')
-        .map((e) => `${ICONS[e.type] || '•'} ${e.text}`);
+        .map((e) => {
+            let text = stripLeadingEmoji(e.text);
+            if (e.type === 'death' && e.victim) {
+                text = text.replace(
+                    new RegExp(`\\*\\*${escapeRegex(e.victim)}\\*\\*`),
+                    `~~**${e.victim}**~~`,
+                );
+            }
+            const icon = EVENT_ICONS[e.type] || '•';
+            return `${icon} ${text}`;
+        });
 
     if (lines.length === 0) {
-        lines.push('The trail is quiet. Oxen breathe heavy in the cold air.');
+        return 'The trail is quiet. Oxen breathe heavy in the cold air.';
     }
 
-    const body = lines.map((l) => `│ ${l}`).join('\n');
+    return lines.join('\n');
+}
+
+/** Compact stats line like Rumble's "Players Left: X • Era: Y" footer. */
+function formatDayFooter(distance, weather, rations, aliveCount, total, landmarkName, eraName) {
+    const era = eraName ? `Era: ${eraName} • ` : '';
     return (
-        '```\n' +
-        '╔══ TRAIL LOG ══════════════════╗\n' +
-        `${body}\n` +
-        '╚════════════════════════════════╝\n' +
-        '```'
+        `${era}Alive: ${aliveCount}/${total} • ${distance}/1000 mi • ${weather} • ` +
+        `${Math.max(0, rations)} lbs rations • Near ${landmarkName}`
     );
 }
 
@@ -237,27 +267,23 @@ const DEPART_ASCII =
     '  > DESTINATION: OREGON\n' +
     '```';
 
-const VICTORY_ASCII =
-    '```\n' +
-    '  ★ OREGON TERRITORY ★\n' +
-    '  _________________________\n' +
-    '  YOU HAVE REACHED THE VALLEY\n' +
-    '```';
+const VICTORY_BANNER = '**★ Oregon Territory ★**\n*You have reached the valley.*';
 
 module.exports = {
     COLORS,
-    getLandmark,
     pickDayHeader,
     formatDayTitle,
     dayEmbedColor,
     getDayThumbnail,
     pickTrailFooter,
+    pickSupportWink,
     weatherLine,
-    formatTrailLog,
+    formatTrailNarrative,
+    formatDayFooter,
     progressBar,
     WAGON_ASCII,
     DEPART_ASCII,
-    VICTORY_ASCII,
+    VICTORY_BANNER,
     LOBBY_THUMBNAIL,
     VICTORY_THUMBNAIL,
 };

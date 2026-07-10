@@ -9,10 +9,20 @@ const { requireEnv, getConfig } = require('./config.js');
 
 requireEnv(['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID']);
 const config = getConfig();
+const { listSelectableEras } = require('./themes/index.js');
 
 const royaleCommand = new SlashCommandBuilder()
     .setName('royale')
     .setDescription('🪖 Start a game of Tilt Battle Royale!')
+    .addStringOption(opt => {
+        opt.setName('era')
+            .setDescription('Trail era (Trail Pass required for bonus eras)')
+            .setRequired(false);
+        for (const era of listSelectableEras()) {
+            opt.addChoices({ name: era.name, value: era.id });
+        }
+        return opt;
+    })
     .addIntegerOption(opt =>
         opt.setName('lobby_seconds')
             .setDescription('How many seconds to wait for players to join (default: 60)')

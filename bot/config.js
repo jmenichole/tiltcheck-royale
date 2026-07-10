@@ -13,6 +13,11 @@ function requireEnv(keys = REQUIRED) {
     }
 }
 
+function parseIdList(value) {
+    if (!value?.trim()) return [];
+    return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 function getConfig() {
     const port = parseInt(process.env.PORT || process.env.WS_PORT || '8080', 10);
 
@@ -27,6 +32,7 @@ function getConfig() {
         supportServerUrl: process.env.SUPPORT_SERVER_URL || '',
         feedbackUrl: process.env.FEEDBACK_URL || '',
         storeUrl: `https://discord.com/application-directory/${process.env.DISCORD_CLIENT_ID}/store`,
+        trailPassBypassUserIds: parseIdList(process.env.TRAIL_PASS_BYPASS_USER_IDS ?? ''),
     };
 }
 
