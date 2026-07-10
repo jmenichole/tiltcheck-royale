@@ -31,6 +31,7 @@ function getConfig() {
         botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
         supportServerUrl: process.env.SUPPORT_SERVER_URL || '',
         feedbackUrl: process.env.FEEDBACK_URL || '',
+        kofiUrl: (process.env.KOFI_URL || 'https://ko-fi.com/jmenichole0').trim(),
         storeUrl: `https://discord.com/application-directory/${process.env.DISCORD_CLIENT_ID}/store`,
         trailPassBypassUserIds: parseIdList(process.env.TRAIL_PASS_BYPASS_USER_IDS ?? ''),
         soloTestUserIds: parseIdList(

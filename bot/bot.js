@@ -165,10 +165,11 @@ function buildSupportEmbed() {
             ? `→ Join the support server: ${config.supportServerUrl}`
             : '→ Ask your server admin to contact the bot owner, or open the bot profile → Message.',
         '',
-        '**Suggestions** — new modes, balance ideas, or QoL?',
-        config.feedbackUrl
-            ? `→ Share here: ${config.feedbackUrl}`
-            : '→ Use `/support message:your idea` or post in the support server.',
+        '**Feedback** — use `/support` with a type:',
+        '→ 🐛 **Bug report** — something broke',
+        '→ 💡 **Suggestion** — ideas for the trail',
+        '→ 👋 **Say hi to dev** — just being friendly',
+        '→ ☕ **Donation link** — Ko-fi tip jar sent to your DMs',
         '',
         '**Trail Pass** — unlock all trail eras forever (host-only).',
         `→ [Get Trail Pass](${config.storeUrl})`,
@@ -185,22 +186,75 @@ function buildSupportEmbed() {
         .setTimestamp();
 }
 
+function buildDonateDmEmbed() {
+    return new EmbedBuilder()
+        .setColor(COLOR_GOLD)
+        .setTitle('☕ Feed the oxen')
+        .setDescription(
+            'Optional tip jar — **zero gameplay perks**, just good trail vibes.\n\n' +
+            `→ [**Support on Ko-fi**](${config.kofiUrl})\n\n` +
+            'Thanks for playing Tilt Battle Royale!',
+        )
+        .setFooter({ text: 'The oxen remember every kindness.' })
+        .setTimestamp();
+}
+
 async function handleSupportCommand(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    const type = interaction.options.getString('type', true);
+    const details = interaction.options.getString('details')?.trim() || '';
 
-    const message = interaction.options.getString('message');
-    const embed = buildSupportEmbed();
-
-    if (message) {
-        console.log(`[support] ${interaction.user.tag} (${interaction.user.id}): ${message}`);
-        embed.addFields({
-            name: '📝 Your message',
-            value: message.length > 200 ? `${message.slice(0, 197)}...` : message,
-            inline: false,
-        });
+    if (type === 'donate') {
+        await interaction.deferReply({ ephemeral: true });
+        try {
+            await interaction.user.send({ embeds: [buildDonateDmEmbed()] });
+            await interaction.editReply({ content: '✅ Sent the Ko-fi link to your DMs!' });
+        } catch {
+            await interaction.editReply({
+                content: '⚠️ Couldn\'t DM you — your privacy settings may block bot messages. Here\'s the link:',
+                embeds: [buildDonateDmEmbed()],
+            });
+        }
+        return;
     }
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.deferReply({ ephemeral: true });
+
+    if (type === 'say_hi') {
+        const note = details || '(waved from the trail)';
+        console.log(`[support:hi] ${interaction.user.tag} (${interaction.user.id}): ${note}`);
+        await interaction.editReply({
+            content: (
+                `👋 **Howdy, ${interaction.user.username}!**\n` +
+                'The dev sees you. Thanks for playing — the oxen appreciate every pioneer.\n\n' +
+                (details ? `_You said: ${details}_` : '_Trail on, pioneer._')
+            ),
+        });
+        return;
+    }
+
+    if (type === 'bug_report' || type === 'suggestion') {
+        if (!details) {
+            return interaction.editReply({
+                content: `❌ Please add **details** for your ${type === 'bug_report' ? 'bug report' : 'suggestion'}.`,
+            });
+        }
+
+        const label = type === 'bug_report' ? 'bug' : 'suggestion';
+        console.log(`[support:${label}] ${interaction.user.tag} (${interaction.user.id}): ${details}`);
+
+        const embed = buildSupportEmbed();
+        embed.addFields({
+            name: '📝 Your message',
+            value: details.length > 1024 ? `${details.slice(0, 1021)}...` : details,
+            inline: false,
+        });
+
+        const ack = type === 'bug_report'
+            ? '🐛 **Bug logged.** We\'ll look into it — thank you!'
+            : '💡 **Suggestion logged.** We read every one!';
+
+        await interaction.editReply({ content: ack, embeds: [embed] });
+    }
 }
 
 function buildLobbyButtons(gameStarted = false) {
@@ -267,7 +321,18 @@ async function finishChoiceAndResume(channelId, entry, channel) {
     entry.simTimer = setInterval(entry.tickFn, TICK_MS);
 }
 
+function parseChoiceCustomId(customId) {
+    const colon = customId.indexOf(':');
+    if (colon === -1) return null;
+    const type = customId.slice('choice_'.length, colon);
+    const choiceId = customId.slice(colon + 1);
+    return type && choiceId ? { type, choiceId } : null;
+}
+
 async function resolvePendingChoice(channelId, entry, channel) {
+    if (entry.resolvingChoice) return;
+    entry.resolvingChoice = true;
+    try {
     const { game } = entry;
     const pc = game.pendingChoice;
     if (!pc) return;
@@ -275,6 +340,10 @@ async function resolvePendingChoice(channelId, entry, channel) {
     if (entry.choiceTimeout) {
         clearTimeout(entry.choiceTimeout);
         entry.choiceTimeout = null;
+    }
+    if (entry.choiceCountdownTimer) {
+        clearInterval(entry.choiceCountdownTimer);
+        entry.choiceCountdownTimer = null;
     }
 
     let events = [];
@@ -313,13 +382,64 @@ async function resolvePendingChoice(channelId, entry, channel) {
     }
 
     await finishChoiceAndResume(channelId, entry, channel);
+    } finally {
+        entry.resolvingChoice = false;
+    }
+}
+
+async function refreshChoiceMessage(entry, channel, type, options = {}) {
+    const pc = entry.game?.pendingChoice;
+    if (!pc) return;
+
+    const alive = alivePlayers(entry.game);
+    const secondsLeft = Math.max(0, Math.ceil((pc.deadline - Date.now()) / 1000));
+    const msg = await channel.messages.fetch(pc.messageId).catch(() => null);
+    if (!msg) return;
+
+    await msg.edit({
+        embeds: [buildChoiceEmbed(type, entry.game, {
+            ...options,
+            secondsLeft,
+            voteCount: pc.votes.size,
+            voteTotal: alive.length,
+        })],
+        components: buildChoiceButtons(type),
+    }).catch(() => {});
+}
+
+function startChoiceCountdown(channelId, entry, channel, type, options = {}) {
+    if (entry.choiceCountdownTimer) clearInterval(entry.choiceCountdownTimer);
+
+    entry.choiceCountdownTimer = setInterval(async () => {
+        const pc = entry.game?.pendingChoice;
+        if (!pc) {
+            clearInterval(entry.choiceCountdownTimer);
+            entry.choiceCountdownTimer = null;
+            return;
+        }
+
+        const secondsLeft = Math.max(0, Math.ceil((pc.deadline - Date.now()) / 1000));
+        if (secondsLeft <= 0) {
+            clearInterval(entry.choiceCountdownTimer);
+            entry.choiceCountdownTimer = null;
+            return;
+        }
+
+        if (secondsLeft % 3 === 0 || secondsLeft <= 5) {
+            await refreshChoiceMessage(entry, channel, type, options);
+        }
+    }, 1000);
 }
 
 async function startChoiceWindow(channelId, entry, channel, type, extra = {}) {
     clearInterval(entry.simTimer);
 
     const { game } = entry;
-    const embed = buildChoiceEmbed(type, game, extra);
+    const options = type === 'river' ? { riverName: extra.riverName } : {};
+    const embed = buildChoiceEmbed(type, game, {
+        ...options,
+        secondsLeft: Math.floor(CHOICE_MS / 1000),
+    });
     const msg = await channel.send({
         embeds: [embed],
         components: buildChoiceButtons(type),
@@ -332,6 +452,8 @@ async function startChoiceWindow(channelId, entry, channel, type, extra = {}) {
         votes: new Map(),
         riverChoice: null,
     };
+
+    startChoiceCountdown(channelId, entry, channel, type, options);
 
     entry.choiceTimeout = setTimeout(() => {
         resolvePendingChoice(channelId, entry, channel).catch(err => console.error('Choice timeout error:', err));
@@ -504,6 +626,7 @@ function shutdown() {
         if (entry.countdownTimer) clearInterval(entry.countdownTimer);
         if (entry.simTimer) clearInterval(entry.simTimer);
         if (entry.choiceTimeout) clearTimeout(entry.choiceTimeout);
+        if (entry.choiceCountdownTimer) clearInterval(entry.choiceCountdownTimer);
         if (entry.game) entry.game.pendingChoice = null;
     }
     activeGames.clear();
@@ -626,12 +749,11 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             return interaction.reply({ content: '❌ That choice window closed.', ephemeral: true });
         }
 
-        const parts = interaction.customId.split(':');
-        const type = parts[1];
-        const choiceId = parts[2];
-        if (pc.type !== type) {
+        const parsed = parseChoiceCustomId(interaction.customId);
+        if (!parsed || pc.type !== parsed.type) {
             return interaction.reply({ content: '❌ That choice window closed.', ephemeral: true });
         }
+        const { type, choiceId } = parsed;
 
         const pioneer = game.party.find(c => c.id === user.id && c.alive);
         if (!pioneer && type !== 'river') {
@@ -652,6 +774,9 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
 
         pc.votes.set(user.id, choiceId);
         await interaction.reply({ content: '✅ Choice locked in.', ephemeral: true });
+
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (channel) await refreshChoiceMessage(entry, channel, type);
 
         const alive = alivePlayers(game);
         if (alive.every(c => pc.votes.has(c.id))) {

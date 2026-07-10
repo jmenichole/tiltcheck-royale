@@ -44,10 +44,21 @@ const royaleCommand = new SlashCommandBuilder()
 
 const supportCommand = new SlashCommandBuilder()
     .setName('support')
-    .setDescription('🛟 Get help, send a suggestion, or support development')
+    .setDescription('🛟 Get help, send feedback, or support development')
     .addStringOption(opt =>
-        opt.setName('message')
-            .setDescription('Optional bug report or feature idea')
+        opt.setName('type')
+            .setDescription('What do you need?')
+            .setRequired(true)
+            .addChoices(
+                { name: '🐛 Bug report', value: 'bug_report' },
+                { name: '💡 Suggestion', value: 'suggestion' },
+                { name: '👋 Say hi to dev', value: 'say_hi' },
+                { name: '☕ Donation link (DM)', value: 'donate' },
+            )
+    )
+    .addStringOption(opt =>
+        opt.setName('details')
+            .setDescription('Describe the bug, idea, or hello (not needed for donate)')
             .setMaxLength(500)
             .setRequired(false)
     )

@@ -54,22 +54,40 @@ function tallyGroupVotes(votes) {
     return { winner, counts };
 }
 
-function buildChoiceEmbed(type, game, extra = {}) {
+function buildChoiceEmbed(type, game, options = {}) {
+    const {
+        riverName,
+        secondsLeft = Math.floor(CHOICE_MS / 1000),
+        voteCount = 0,
+        voteTotal = alivePlayers(game).length,
+    } = options;
+
     const titles = {
         group: '🗳️ Trail Decision — vote now',
         personal: '🎒 Personal choice — pick your move',
-        river: `🌊 River crossing — ${extra.riverName || 'the ford'}`,
+        river: `🌊 River crossing — ${riverName || 'the ford'}`,
     };
     const bodies = {
         group: 'The party must decide how to press on. **Alive pioneers vote** — plurality wins.',
-        personal: 'Each survivor chooses alone. Pick one action before time runs out.',
+        personal: 'Each survivor chooses alone. Others won\'t know your pick until time\'s up.',
         river: 'How do you cross? **Wagon leader decides** if multiple remain.',
     };
+
+    const urgency = secondsLeft <= 5 ? ' 🔥' : '';
+    const countdown = `⏳ **${secondsLeft}s** to choose${urgency}`;
+
+    let status = '';
+    if (type === 'group' || type === 'personal') {
+        status = `\n🗳️ **${voteCount}/${voteTotal}** locked in`;
+    } else if (type === 'river') {
+        status = '\n👑 Waiting on the **wagon leader**…';
+    }
+
     return new EmbedBuilder()
-        .setColor(COLORS.amber)
+        .setColor(secondsLeft <= 5 ? COLORS.red : COLORS.amber)
         .setTitle(titles[type] || 'Choose')
-        .setDescription(bodies[type] || '')
-        .setFooter({ text: `Choose in ${Math.floor(CHOICE_MS / 1000)}s…` })
+        .setDescription(`${bodies[type] || ''}\n\n${countdown}${status}`)
+        .setFooter({ text: 'Prisoners-dilemma beats — trust no one on the trail' })
         .setTimestamp();
 }
 
