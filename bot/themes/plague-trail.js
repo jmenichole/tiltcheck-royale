@@ -125,6 +125,11 @@ module.exports = {
     weathers: ['Rainy', 'Rainy', 'Stormy', 'Stormy', 'Stormy', 'Fair', 'Blizzard'],
     eventWeights: { combat: 0.28, disease: 0.55, loot: 0.62, hunt: 0.72 },
     events,
+    phaseFlavors: {
+        departure: 'The quarantine gate creaks shut behind you. Rats scatter.',
+        killzone: 'Graves line the trail. Pioneers eye each other\'s medicine.',
+        final: 'The last ford runs red. No one leaves together.',
+    },
     lobbyTagline: '*The wagon creaks. Someone coughs. Only one survives the plague trail.*',
     victoryBanner: '**★ Beyond the Quarantine ★**\n*You outlasted the plague.*',
 };

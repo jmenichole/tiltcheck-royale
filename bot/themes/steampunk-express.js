@@ -125,6 +125,11 @@ module.exports = {
     weathers: ['Fair', 'Fair', 'Fair', 'Scorching', 'Scorching', 'Stormy', 'Stormy'],
     eventWeights: { combat: 0.42, disease: 0.48, loot: 0.65, hunt: 0.75 },
     events,
+    phaseFlavors: {
+        departure: 'Steam hisses. Gears turn. The express won\'t wait.',
+        killzone: 'Sabotage and boiler explosions thin the ranks.',
+        final: 'All aboard — or off the train.',
+    },
     lobbyTagline: '*All aboard the Steampunk Express. One ticket. One survivor.*',
     victoryBanner: '**★ Terminus Reached ★**\n*The last conductor standing.*',
 };

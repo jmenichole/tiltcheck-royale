@@ -124,6 +124,11 @@ module.exports = {
     weathers: ['Fair', 'Fair', 'Fair', 'Fair', 'Scorching', 'Stormy', 'Rainy'],
     eventWeights: { combat: 0.30, disease: 0.40, loot: 0.58, hunt: 0.78 },
     events,
+    phaseFlavors: {
+        departure: 'Gold fever spreads faster than cholera.',
+        killzone: 'Claim jumpers prowl the diggings.',
+        final: 'One claim. One survivor.',
+    },
     lobbyTagline: '*Sacramento → Mother Lode — one claim survives.*',
     victoryBanner: '**★ Mother Lode ★**\n*The richest claim is yours.*',
 };

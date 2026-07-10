@@ -126,6 +126,11 @@ module.exports = {
     weathers: ['Fair', 'Fair', 'Fair', 'Rainy', 'Scorching', 'Stormy', 'Blizzard'],
     eventWeights: { combat: 0.38, disease: 0.52, loot: 0.67, hunt: 0.82 },
     events,
+    phaseFlavors: {
+        departure: 'Independence fades behind the wagon train.',
+        killzone: 'Supplies run thin. Tempers run hot.',
+        final: 'Oregon waits beyond the last river.',
+    },
     lobbyTagline: '*Independence, Missouri → Oregon Territory — one pioneer survives.*',
     victoryBanner: '**★ Oregon Territory ★**\n*You have reached the valley.*',
 };
