@@ -1,7 +1,7 @@
 # Trail Phases, Highlight Reel & Choice Beats
 
 **Date:** 2026-07-10  
-**Status:** Approved — pending implementation  
+**Status:** Approved — v1 ready to implement  
 **Project:** Tilt Battle Royale (`bot/`)
 
 ## Summary
