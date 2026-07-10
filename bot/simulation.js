@@ -32,8 +32,8 @@ function pushEvent(events, event, game, character) {
 
 function syncPhase(game) {
     const next = getPhase(game.distance);
-    const changed = next !== game.phase;
-    game.phase = next;
+    const changed = next !== game.trailPhase;
+    game.trailPhase = next;
     return changed ? next : null;
 }
 
@@ -96,7 +96,8 @@ function createGame(channelId, hostId, eraId = 'oregon-trail') {
         channelId,
         hostId,
         eraId,
-        phase: 'departure',
+        phase: 'lobby',
+        trailPhase: 'departure',
         quietBuffer: null,
         knownStatuses: {},
         party: [],
@@ -125,7 +126,7 @@ function runDay(game) {
     const prevDistance = game.distance;
     const miles = Math.round(rand(14, 28) * mult.miles);
     game.distance += miles;
-    game.phase = getPhase(game.distance);
+    game.trailPhase = getPhase(game.distance);
 
     const alive = game.party.filter((c) => c.alive);
     const consumed = alive.length * 3;
