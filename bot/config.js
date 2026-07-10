@@ -24,6 +24,9 @@ function getConfig() {
         },
         port,
         botUsername: (process.env.BOT_USERNAME || 'tilt-battle-royale').trim(),
+        supportServerUrl: process.env.SUPPORT_SERVER_URL || '',
+        feedbackUrl: process.env.FEEDBACK_URL || '',
+        storeUrl: `https://discord.com/application-directory/${process.env.DISCORD_CLIENT_ID}/store`,
     };
 }
 

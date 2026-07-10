@@ -1,11 +1,6 @@
 /**
- * Register /royale slash command with Discord.
+ * Register slash commands with Discord.
  * Run once: npm run deploy
- *
- * By default registers GLOBALLY — works in every server the bot is invited to.
- * May take up to ~1 hour to appear everywhere (usually much faster).
- *
- * Optional: set DISCORD_GUILD_ID in .env for instant guild-only testing.
  */
 
 require('dotenv').config();
@@ -27,10 +22,23 @@ const royaleCommand = new SlashCommandBuilder()
     )
     .toJSON();
 
-/** Keep Discord-managed commands (e.g. Activity Entry Point) when replacing globals. */
+const supportCommand = new SlashCommandBuilder()
+    .setName('support')
+    .setDescription('🛟 Get help, send a suggestion, or support development')
+    .addStringOption(opt =>
+        opt.setName('message')
+            .setDescription('Optional bug report or feature idea')
+            .setMaxLength(500)
+            .setRequired(false)
+    )
+    .toJSON();
+
+const APP_COMMANDS = [royaleCommand, supportCommand];
+const APP_COMMAND_NAMES = APP_COMMANDS.map(cmd => cmd.name);
+
 function preserveOtherCommands(existing) {
     return existing
-        .filter(cmd => cmd.name !== 'royale')
+        .filter(cmd => !APP_COMMAND_NAMES.includes(cmd.name))
         .map(({ id, application_id, version, guild_id, ...cmd }) => cmd);
 }
 
@@ -39,14 +47,14 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
 (async () => {
     try {
         if (config.discord.guildId) {
-            console.log(`Registering /royale for guild ${config.discord.guildId} (instant)...`);
+            console.log(`Registering commands for guild ${config.discord.guildId}...`);
             await rest.put(
                 Routes.applicationGuildCommands(config.discord.clientId, config.discord.guildId),
-                { body: [royaleCommand] },
+                { body: APP_COMMANDS },
             );
-            console.log('✅ Guild command registered — visible immediately in that server.');
+            console.log('✅ Guild commands registered — visible immediately in that server.');
         } else {
-            console.log('Registering /royale globally (all servers)...');
+            console.log('Registering commands globally...');
             const existing = await rest.get(Routes.applicationCommands(config.discord.clientId));
             const preserved = preserveOtherCommands(existing);
             if (preserved.length > 0) {
@@ -54,9 +62,9 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
             }
             await rest.put(
                 Routes.applicationCommands(config.discord.clientId),
-                { body: [...preserved, royaleCommand] },
+                { body: [...preserved, ...APP_COMMANDS] },
             );
-            console.log('✅ Global command registered — works in every server the bot is in.');
+            console.log('✅ Global commands registered — /royale and /support');
             console.log('   Discord may take up to ~1 hour to propagate globally.');
         }
         console.log('Start the bot with: npm start');

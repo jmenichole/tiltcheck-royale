@@ -91,6 +91,11 @@ function buildDayEmbed(day, events, distance, weather, rations, aliveCount, tota
 }
 
 function buildVictoryEmbed(text, winner) {
+    let footer = `${FOOTER} — Thanks for playing!`;
+    if (!winner?.isSupporter) {
+        footer += ' • ⭐ Pioneer Supporter helps fund new modes (same fair game)';
+    }
+
     const embed = new EmbedBuilder()
         .setColor(COLOR_GOLD)
         .setTitle(`🏆 ${BRAND} — FINAL RESULT`)
@@ -105,7 +110,7 @@ function buildVictoryEmbed(text, winner) {
             text
         )
         .setTimestamp()
-        .setFooter({ text: `${FOOTER} — Thanks for playing!` });
+        .setFooter({ text: footer });
 
     if (winner) {
         embed.addFields(
@@ -121,6 +126,60 @@ function buildVictoryEmbed(text, winner) {
         }
     }
     return embed;
+}
+
+function buildSupportEmbed() {
+    const lines = [
+        '**Technical help** — bot not responding, `/royale` missing, or match stuck?',
+        config.supportServerUrl
+            ? `→ Join the support server: ${config.supportServerUrl}`
+            : '→ Ask your server admin to contact the bot owner, or open the bot profile → Message.',
+        '',
+        '**Suggestions** — new modes, balance ideas, or QoL?',
+        config.feedbackUrl
+            ? `→ Share here: ${config.feedbackUrl}`
+            : '→ Use `/support message:your idea` or post in the support server.',
+        '',
+        '**Support development** — optional **Pioneer Supporter** subscription.',
+        '→ Same fair gameplay for everyone — helps fund new trail modes.',
+        `→ [Open the store](${config.storeUrl})`,
+    ];
+
+    return new EmbedBuilder()
+        .setColor(COLOR_GREEN)
+        .setTitle(`🛟 ${BRAND} — Support`)
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: 'We read every suggestion — thanks for playing!' })
+        .setTimestamp();
+}
+
+function buildSupportButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel('⭐ Pioneer Supporter')
+            .setStyle(ButtonStyle.Premium)
+            .setSKUId(getSupporterSkuId()),
+    );
+}
+
+async function handleSupportCommand(interaction) {
+    const message = interaction.options.getString('message');
+    const embed = buildSupportEmbed();
+
+    if (message) {
+        console.log(`[support] ${interaction.user.tag} (${interaction.user.id}): ${message}`);
+        embed.addFields({
+            name: '📝 Your message',
+            value: message.length > 200 ? `${message.slice(0, 197)}...` : message,
+            inline: false,
+        });
+    }
+
+    await interaction.reply({
+        embeds: [embed],
+        components: [buildSupportButtons()],
+        ephemeral: true,
+    });
 }
 
 function buildLobbyButtons(gameStarted = false) {
@@ -310,6 +369,10 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         });
         startCountdown(channelId, reply.id, seconds);
         return;
+    }
+
+    if (interaction.isChatInputCommand() && interaction.commandName === 'support') {
+        return handleSupportCommand(interaction);
     }
 
     if (!interaction.isButton()) return;
