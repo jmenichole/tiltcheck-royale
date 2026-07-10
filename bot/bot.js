@@ -19,7 +19,12 @@ const {
     supporterPrefix,
 } = require('./premium.js');
 const {
+    COLORS,
     getLandmark,
+    pickDayHeader,
+    formatDayTitle,
+    dayEmbedColor,
+    getDayThumbnail,
     pickTrailFooter,
     weatherLine,
     formatTrailLog,
@@ -27,6 +32,8 @@ const {
     WAGON_ASCII,
     DEPART_ASCII,
     VICTORY_ASCII,
+    LOBBY_THUMBNAIL,
+    VICTORY_THUMBNAIL,
 } = require('./trail-theme.js');
 
 requireEnv();
@@ -47,10 +54,8 @@ app.get('/api/health', (_req, res) => {
 });
 const server = http.createServer(app);
 
-const COLOR_TRAIL = 0x2d8a2d;   // green CRT / prairie
-const COLOR_AMBER = 0xffaa00;   // classic terminal amber accent
-const COLOR_RED   = 0xcc2222;
-const COLOR_GOLD  = 0xffd700;
+const COLOR_TRAIL = COLORS.trail;
+const COLOR_GOLD  = COLORS.gold;
 
 function buildLobbyEmbed(game, secondsLeft) {
     const names = game.party.length > 0
@@ -70,6 +75,7 @@ function buildLobbyEmbed(game, secondsLeft) {
             `⏳ **Departing in ${secondsLeft} seconds...**`
         )
         .addFields({ name: `🪙 Party roster (${game.party.length}/20)`, value: names })
+        .setThumbnail(LOBBY_THUMBNAIL)
         .setFooter({ text: `Join the Wagon • ${FOOTER} • Parody trail sim` })
         .setTimestamp();
 }
@@ -77,15 +83,18 @@ function buildLobbyEmbed(game, secondsLeft) {
 function buildDayEmbed(day, events, distance, weather, rations, aliveCount, total) {
     const landmark = getLandmark(distance);
     const hasDeath = events.some(e => e.type === 'death');
+    const header = pickDayHeader(day, weather, events, landmark);
 
     return new EmbedBuilder()
-        .setColor(hasDeath ? COLOR_RED : COLOR_TRAIL)
-        .setTitle(`📅 Day ${day} — ${weather}`)
+        .setColor(dayEmbedColor(weather, hasDeath))
+        .setTitle(formatDayTitle(header, day))
         .setDescription(
+            `*${header.flavor}*\n\n` +
             `${formatTrailLog(events)}\n` +
             `*${weatherLine(weather)}*\n` +
             `📍 **Near:** ${landmark.name}`
         )
+        .setThumbnail(getDayThumbnail(landmark, hasDeath))
         .addFields(
             { name: '🗺️ Trail progress', value: `\`${progressBar(distance)}\``, inline: false },
             { name: '🍖 Rations', value: `${Math.max(0, rations)} lbs`, inline: true },
@@ -106,6 +115,7 @@ function buildVictoryEmbed(text, winner) {
         .setColor(COLOR_GOLD)
         .setTitle('🏆 TRAIL COMPLETE — FINAL SCORE')
         .setDescription(`${VICTORY_ASCII}\n${text}`)
+        .setThumbnail(VICTORY_THUMBNAIL)
         .setTimestamp()
         .setFooter({ text: footer });
 
