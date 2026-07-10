@@ -2,8 +2,8 @@
  * Register slash commands with Discord.
  * Run once: npm run deploy
  *
- * Always registers globally. If DISCORD_GUILD_IDS is set, clears guild-specific
- * copies on those servers so /royale and /support do not appear twice.
+ * Registers globally for all servers. Guilds in DISCORD_GUILD_IDS also get an
+ * instant guild copy (overrides global in that server — use for test servers).
  */
 
 require('dotenv').config();
@@ -66,19 +66,6 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
 
 (async () => {
     try {
-        for (const guildId of config.discord.guildIds) {
-            try {
-                console.log(`Clearing guild-specific commands on ${guildId} (prevents duplicates)...`);
-                await rest.put(
-                    Routes.applicationGuildCommands(config.discord.clientId, guildId),
-                    { body: [] },
-                );
-                console.log(`✅ Guild ${guildId} — using global /royale and /support only.`);
-            } catch (err) {
-                console.warn(`⚠️  Guild ${guildId} skipped: ${err.message}`);
-            }
-        }
-
         console.log('Registering commands globally...');
         const existing = await rest.get(Routes.applicationCommands(config.discord.clientId));
         const preserved = preserveOtherCommands(existing);
@@ -89,8 +76,22 @@ const rest = new REST({ version: '10' }).setToken(config.discord.token);
             Routes.applicationCommands(config.discord.clientId),
             { body: [...preserved, ...APP_COMMANDS] },
         );
-        console.log('✅ Global commands registered — works in any server the bot is in.');
-        console.log('   Discord may take up to ~1 hour to propagate globally.');
+        console.log('✅ Global commands registered.');
+
+        for (const guildId of config.discord.guildIds) {
+            try {
+                console.log(`Pushing instant guild commands to ${guildId}...`);
+                await rest.put(
+                    Routes.applicationGuildCommands(config.discord.clientId, guildId),
+                    { body: APP_COMMANDS },
+                );
+                console.log(`✅ Guild ${guildId} — updated immediately.`);
+            } catch (err) {
+                console.warn(`⚠️  Guild ${guildId} skipped: ${err.message}`);
+            }
+        }
+
+        console.log('Done. Restart Discord (Ctrl+R) if commands still look outdated.');
         console.log('Start the bot with: npm start');
     } catch (error) {
         console.error('❌ Failed to register commands:', error);

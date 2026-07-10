@@ -175,6 +175,8 @@ function buildSupportEmbed() {
 }
 
 async function handleSupportCommand(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+
     const message = interaction.options.getString('message');
     const embed = buildSupportEmbed();
 
@@ -187,10 +189,7 @@ async function handleSupportCommand(interaction) {
         });
     }
 
-    await interaction.reply({
-        embeds: [embed],
-        ephemeral: true,
-    });
+    await interaction.editReply({ embeds: [embed] });
 }
 
 function buildLobbyButtons(gameStarted = false) {
@@ -397,6 +396,8 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             });
         }
 
+        await interaction.deferReply();
+
         const game = createGame(channelId, interaction.user.id, eraId);
         const hostChar = createCharacter(interaction.user, eraId);
         hostChar.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
@@ -407,7 +408,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         }
 
         const embed = buildLobbyEmbed(game, seconds);
-        const reply = await interaction.reply({
+        const reply = await interaction.editReply({
             embeds: [embed],
             components: buildLobbyButtons(),
             fetchReply: true,
@@ -441,11 +442,12 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
     const user = interaction.user;
 
     if (interaction.customId === 'join_wagon') {
+        await interaction.deferReply();
         if (game.party.find(c => c.id === user.id)) {
-            return interaction.reply({ content: '✅ You\'re already in the wagon!', ephemeral: true });
+            return interaction.editReply({ content: '✅ You\'re already in the wagon!' });
         }
         if (game.party.length >= 20) {
-            return interaction.reply({ content: '❌ The wagon is full! (20 max)', ephemeral: true });
+            return interaction.editReply({ content: '❌ The wagon is full! (20 max)' });
         }
         const character = createCharacter(user, game.eraId);
         character.isSupporter = hasSupporterFromEntitlements(interaction.entitlements);
@@ -459,18 +461,18 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             });
         }
 
-        return interaction.reply({
+        return interaction.editReply({
             content: character.isSupporter
                 ? `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** — swears the oxen look better fed already.`
                 : `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** from Independence.`,
-            ephemeral: false,
         });
     }
 
     if (interaction.customId === 'leave_wagon') {
+        await interaction.deferReply();
         const idx = game.party.findIndex(c => c.id === user.id);
         if (idx === -1) {
-            return interaction.reply({ content: '❌ You\'re not in the wagon.', ephemeral: true });
+            return interaction.editReply({ content: '❌ You\'re not in the wagon.' });
         }
         game.party.splice(idx, 1);
 
@@ -482,7 +484,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             });
         }
 
-        return interaction.reply({ content: `🚪 **${user.displayName}** stepped off the wagon.`, ephemeral: false });
+        return interaction.editReply({ content: `🚪 **${user.displayName}** stepped off the wagon.` });
     }
 
     if (interaction.customId === 'depart_early') {
@@ -490,13 +492,16 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
             return interaction.reply({ content: '❌ Only the wagon leader can depart early!', ephemeral: true });
         }
         clearInterval(entry.countdownTimer);
-        await interaction.reply({ content: '🚀 Departing early!', ephemeral: false });
+        await interaction.deferReply();
+        await interaction.editReply({ content: '🚀 Departing early!' });
         return startSimulation(channelId, lobbyMessageId);
     }
     } catch (err) {
-        console.error('Interaction error:', err.message || err);
+        console.error('Interaction error:', err.message || err, err.stack);
         if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ Something went wrong. Try again in a moment.', ephemeral: true }).catch(() => {});
+        } else if (interaction.isRepliable()) {
+            await interaction.editReply({ content: '❌ Something went wrong. Try again in a moment.' }).catch(() => {});
         }
     }
 });
@@ -505,4 +510,7 @@ server.listen(config.port, '0.0.0.0', () => {
     console.log(`🌐 Health check: http://0.0.0.0:${config.port}/api/health`);
 });
 
-client.login(config.discord.token);
+client.login(config.discord.token).catch((err) => {
+    console.error('❌ Discord login failed:', err.message);
+    process.exit(1);
+});
