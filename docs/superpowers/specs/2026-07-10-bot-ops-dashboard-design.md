@@ -15,7 +15,7 @@ Build a **shared analytics layer** every Discord bot can emit to, plus a **minim
 
 ## Bot inventory (from GitHub audit)
 
-Repos under `jmenichole` scanned 2026-07-10. Discord bots grouped by rollout priority.
+Repos under `jmenichole` scanned 2026-07-10. **In scope** for the shared dashboard:
 
 ### Tier 1 — Standalone bots (dedicated Discord applications)
 
@@ -23,32 +23,24 @@ Repos under `jmenichole` scanned 2026-07-10. Discord bots grouped by rollout pri
 |----------|------|------|---------|--------------|-------|
 | `tilt-battle-royale` | [tiltcheck-royale](https://github.com/jmenichole/tiltcheck-royale) | Oregon Trail battle royale | Fly.io (`tilt-battle-royale`) | Trail Pass + Pioneer Supporter SKUs | **v1 pilot** — `bot/analytics.js` lands here first |
 | `justthebuilder` | [justthebuilder](https://github.com/jmenichole/justthebuilder) | AI Discord server builder | Fly (per repo) | TBD | `src/bot.js`, discord.js v14 |
-| `titan-treasure` | [titantreasurebot](https://github.com/jmenichole/titantreasurebot) | Server bootstrap & verification | Self-hosted / TBD | None | `bot.js`, provisioning helpers |
-| `freespins-channel` | [FreeSpinsChannelBot](https://github.com/jmenichole/FreeSpinsChannelBot) | Casino free-spin link mod queue | PM2 / self-hosted | None | Already has `utils/discordLogger.js` (in-server channel only) — migrate to shared analytics |
-| `onboarding-bot` | [onboarding-discord-bot](https://github.com/jmenichole/onboarding-discord-bot) | Client onboarding flows | TBD | None | Small discord.js bot |
+| `dad` | [tiltcheck-me](https://github.com/jmenichole/tiltcheck-me) | Degens Against Decency | TBD | TBD | DAD card game bot — separate repo from TiltCheck monorepo |
 
-### Tier 2 — Monorepo / ecosystem (one primary Discord app, many modules)
+### Tier 2 — Ecosystem (optional later)
 
 | `bot_id` | Repo | Role | Notes |
 |----------|------|------|-------|
-| `tiltcheck-discord` | [tiltcheck-monorepo](https://github.com/jmenichole/tiltcheck-monorepo) `apps/discord-bot` | TiltCheck ecosystem bot | TypeScript, `@tiltcheck/discord-bot`. Modules: suslink, casino, buddy, dad (DAD card game), tipping (justthetip), trust engines, etc. Private repo. |
-| `tiltcheck-mvp-discord` | [tiltcheckmvp](https://github.com/jmenichole/tiltcheckmvp) `apps/discord` | Early TiltCheck Discord app | `@tiltcheck/discord` — likely superseded by monorepo; confirm before instrumenting |
+| `tiltcheck-discord` | [tiltcheck-monorepo](https://github.com/jmenichole/tiltcheck-monorepo) `apps/discord-bot` | TiltCheck ecosystem bot | TypeScript — suslink, casino, buddy, tipping, trust engines, etc. Private repo. **DAD is not here** — see `tiltcheck-me`. |
 
-**Logical products inside `tiltcheck-discord`** (same application, tag via `metadata.module`):
-
-- `dad` — Degens Against Decency commands (`/dad`, `/play`, etc.)
-- `justthetip` — tipping, wallet, vault
-- `suslink` — URL scan / moderation
-- `casino`, `buddy`, `bonus`, etc.
-
-Degens Against Decency is **not** a separate public GitHub repo; it lives in the monorepo as `@tiltcheck/dad`.
-
-### Not Discord bots (excluded from v1)
+### Explicitly out of dashboard scope
 
 | Repo | Reason |
 |------|--------|
-| `B.O.T` | BakeOps landing/backend — no discord.js bot |
-| `trivia.live` `apps/show-runner` | Game engine runner — no discord.js |
+| `titantreasurebot` | Owner opted out |
+| `FreeSpinsChannelBot` | Owner opted out |
+| `onboarding-discord-bot` | Owner opted out |
+| `tiltcheckmvp` `apps/discord` | Superseded / not prioritized |
+| `B.O.T` | BakeOps web — not a Discord bot |
+| `trivia.live` `apps/show-runner` | Game engine runner — not a Discord bot |
 | `BakeOps` | Web app with chatbot UI, not a Discord bot |
 
 ### Future additions
@@ -61,11 +53,10 @@ Any new bot gets a unique `bot_id`, copies `analytics.js`, and shares the same S
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ tilt-battle-    │     │ freespins-      │     │ tiltcheck-      │
-│ royale          │     │ channel         │     │ discord         │
-│  analytics.js   │     │  analytics.js   │     │  @tiltcheck/    │
-└────────┬────────┘     └────────┬────────┘     │  analytics      │
-         │                       │               └────────┬────────┘
+│ tilt-battle-    │     │ justthebuilder  │     │ dad             │
+│ royale          │     │  analytics.js   │     │ (tiltcheck-me)  │
+│  analytics.js   │     └────────┬────────┘     └────────┬────────┘
+└────────┬────────┘              │                       │
          │    JSON event (fire-and-forget)              │
          └──────────────────────┼───────────────────────┘
                                 ▼
@@ -158,16 +149,18 @@ flyctl secrets set -a tilt-battle-royale \
 | `support_bug` | no | details (truncated 500 chars) |
 | `support_suggestion` | no | details (truncated) |
 
-### FreeSpins Channel (migration from `discordLogger`)
+### DAD — Degens Against Decency (`tiltcheck-me`)
 
-| Event | Webhook | Notes |
-|-------|---------|-------|
-| `link_processed` | no | Replaces in-guild log for analytics |
-| `catchup_complete` | no | processed, sent counts |
+| Event | Webhook | Metadata |
+|-------|---------|----------|
+| `game_lobby_created` | no | host_id, player_count |
+| `game_started` | no | player_count, game_type |
+| `game_ended` | no | winner_id, rounds |
+| `round_submitted` | no | round, submission_count |
 
-### TiltCheck Discord (monorepo — Phase 3)
+### TiltCheck Discord (monorepo — Phase 3, optional)
 
-Tag `metadata.module` (`dad`, `suslink`, `justthetip`, etc.). Reuse universal events; add module-specific events as needed (`dad_game_started`, `tip_sent`, `link_flagged`).
+Tag `metadata.module` (`suslink`, `justthetip`, `casino`, etc.). Reuse universal events; add module-specific events as needed (`tip_sent`, `link_flagged`).
 
 **Not logged in v1:** per-tick sim events, every button click, full message bodies.
 
@@ -231,8 +224,8 @@ Optional: UptimeRobot on each bot's `/api/health` → separate uptime webhook (n
 | Phase | Bots | Deliverable |
 |-------|------|-------------|
 | **1** | `tilt-battle-royale` | `bot/analytics.js`, Supabase table, webhook, instrument `bot.js` |
-| **2** | `freespins-channel`, `onboarding-bot`, `titan-treasure`, `justthebuilder` | Copy module; retire per-bot ad-hoc loggers |
-| **3** | `tiltcheck-discord` (monorepo) | `@tiltcheck/analytics` workspace package; module tags in metadata |
+| **2** | `dad` (`tiltcheck-me`), `justthebuilder` | Copy `analytics.js`; instrument game + install events |
+| **3** | `tiltcheck-discord` (monorepo, optional) | `@tiltcheck/analytics` workspace package |
 | **4** | Dashboard UI | Read-only admin page on shared Supabase |
 
 ---
