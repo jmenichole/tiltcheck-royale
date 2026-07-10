@@ -18,6 +18,16 @@ const {
     hasSupporterFromEntitlements,
     supporterPrefix,
 } = require('./premium.js');
+const {
+    getLandmark,
+    pickTrailFooter,
+    weatherLine,
+    formatTrailLog,
+    progressBar,
+    WAGON_ASCII,
+    DEPART_ASCII,
+    VICTORY_ASCII,
+} = require('./trail-theme.js');
 
 requireEnv();
 const config = getConfig();
@@ -37,8 +47,9 @@ app.get('/api/health', (_req, res) => {
 });
 const server = http.createServer(app);
 
-const COLOR_GREEN = 0x00ff41;
-const COLOR_RED   = 0xff2222;
+const COLOR_TRAIL = 0x2d8a2d;   // green CRT / prairie
+const COLOR_AMBER = 0xffaa00;   // classic terminal amber accent
+const COLOR_RED   = 0xcc2222;
 const COLOR_GOLD  = 0xffd700;
 
 function buildLobbyEmbed(game, secondsLeft) {
@@ -49,66 +60,52 @@ function buildLobbyEmbed(game, secondsLeft) {
         : '*No pioneers yet. Be the first to board!*';
 
     return new EmbedBuilder()
-        .setColor(COLOR_GREEN)
-        .setTitle(`🪖 ${BRAND} — LOBBY OPEN`)
+        .setColor(COLOR_TRAIL)
+        .setTitle('🛤️ WAGON DEPOT — LOBBY OPEN')
         .setDescription(
-            '```\n' +
-            ' ______     _ _ _\n' +
-            '__/_|[]|_\\___//_|_|_\\\n' +
-            '|  _     _     _   _  |\n' +
-            '`-(_)---(_)---(_)-(_)-\'\n' +
-            '```\n' +
-            `A wagon train is forming. The trail is dangerous.\n` +
-            `Only **one** will reach Oregon.\n\n` +
-            `**Departing in ${secondsLeft} seconds...**`
+            `${WAGON_ASCII}\n` +
+            `${DEPART_ASCII}\n` +
+            `*Independence, Missouri → Oregon Territory*\n` +
+            `The trail is long. **Only one pioneer survives.**\n\n` +
+            `⏳ **Departing in ${secondsLeft} seconds...**`
         )
-        .addFields({ name: `🪙 Pioneers (${game.party.length}/20)`, value: names })
-        .setFooter({ text: `Click "Join the Wagon" to enter • ${FOOTER}` })
+        .addFields({ name: `🪙 Party roster (${game.party.length}/20)`, value: names })
+        .setFooter({ text: `Join the Wagon • ${FOOTER} • Parody trail sim` })
         .setTimestamp();
 }
 
 function buildDayEmbed(day, events, distance, weather, rations, aliveCount, total) {
-    const ICONS = { day: '📅', combat: '⚔️', death: '☠️', disease: '🤢', item: '📦', passive: '📜' };
-    const pct = Math.min(1, distance / 1000);
-    const bars = Math.round(pct * 20);
-    const progressBar = `[${'█'.repeat(bars)}${'░'.repeat(20 - bars)}] ${distance}/1000 mi`;
-
-    const lines = events
-        .filter(e => e.type !== 'day')
-        .map(e => `${ICONS[e.type] || '•'} ${e.text}`)
-        .join('\n') || '*A quiet day on the trail.*';
+    const landmark = getLandmark(distance);
+    const hasDeath = events.some(e => e.type === 'death');
 
     return new EmbedBuilder()
-        .setColor(events.some(e => e.type === 'death') ? COLOR_RED : COLOR_GREEN)
-        .setTitle(`Day ${day} — ${weather}`)
-        .setDescription(lines)
+        .setColor(hasDeath ? COLOR_RED : COLOR_TRAIL)
+        .setTitle(`📅 Day ${day} — ${weather}`)
+        .setDescription(
+            `${formatTrailLog(events)}\n` +
+            `*${weatherLine(weather)}*\n` +
+            `📍 **Near:** ${landmark.name}`
+        )
         .addFields(
-            { name: '🗺️ Progress', value: `\`${progressBar}\``, inline: false },
+            { name: '🗺️ Trail progress', value: `\`${progressBar(distance)}\``, inline: false },
             { name: '🍖 Rations', value: `${Math.max(0, rations)} lbs`, inline: true },
             { name: '💀 Alive', value: `${aliveCount} / ${total}`, inline: true },
+            { name: '🌤️ Conditions', value: weather, inline: true },
         )
-        .setFooter({ text: FOOTER });
+        .setFooter({ text: pickTrailFooter() })
+        .setTimestamp();
 }
 
 function buildVictoryEmbed(text, winner) {
-    let footer = `${FOOTER} — Thanks for playing!`;
+    let footer = `${FOOTER} — The trail remembers you.`;
     if (!winner?.isSupporter) {
-        footer += ' • ⭐ Pioneer Supporter helps fund new modes (same fair game)';
+        footer += ' • ⭐ Pioneer Supporter helps fund new modes';
     }
 
     const embed = new EmbedBuilder()
         .setColor(COLOR_GOLD)
-        .setTitle(`🏆 ${BRAND} — FINAL RESULT`)
-        .setDescription(
-            '```\n' +
-            '  ____   ___  _   _ _____\n' +
-            ' |  _ \\ / _ \\| \\ | | ____|\n' +
-            ' | | | | | | |  \\| |  _|\n' +
-            ' | |_| | |_| | |\\  | |___\n' +
-            ' |____/ \\___/|_| \\_|_____|\n' +
-            '```\n' +
-            text
-        )
+        .setTitle('🏆 TRAIL COMPLETE — FINAL SCORE')
+        .setDescription(`${VICTORY_ASCII}\n${text}`)
         .setTimestamp()
         .setFooter({ text: footer });
 
@@ -146,8 +143,8 @@ function buildSupportEmbed() {
     ];
 
     return new EmbedBuilder()
-        .setColor(COLOR_GREEN)
-        .setTitle(`🛟 ${BRAND} — Support`)
+        .setColor(COLOR_TRAIL)
+        .setTitle(`🛟 ${BRAND} — Trail Support`)
         .setDescription(lines.join('\n'))
         .setFooter({ text: 'We read every suggestion — thanks for playing!' })
         .setTimestamp();
@@ -234,13 +231,24 @@ async function startSimulation(channelId, lobbyMessageId) {
     try {
         const lobbyMsg = await channel.messages.fetch(lobbyMessageId);
         await lobbyMsg.edit({
-            embeds: [buildLobbyEmbed(game, 0).setTitle(`🪖 ${BRAND} — DEPARTED!`).setDescription('The wagon has left. May the trail have mercy.')],
+            embeds: [buildLobbyEmbed(game, 0)
+                .setTitle('🛤️ WAGON DEPARTED')
+                .setDescription(
+                    `${DEPART_ASCII}\n` +
+                    '*The oxen strain forward. There is no turning back.*\n' +
+                    '**Press onward. May fortune favor the ruthless.**'
+                )],
             components: buildLobbyButtons(true),
         });
     } catch (_) {}
 
     await channel.send({
-        content: `🟢 **Tilt Battle Royale has begun!** ${game.party.length} pioneers set off west. Watch this channel for daily trail updates.`,
+        content: (
+            '🟢 **The wagon train has departed Independence!**\n' +
+            `> ${game.party.length} pioneer${game.party.length === 1 ? '' : 's'} on the trail. ` +
+            'Watch for daily **Trail Log** updates below.\n' +
+            '> *You have died of dysentery.* (just kidding. maybe.)'
+        ),
     });
 
     const TICK_MS = 4000;
@@ -407,7 +415,7 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
         }
 
         return interaction.reply({
-            content: `🪙 **${user.displayName}** boarded the wagon as a **${character.profession}**!`,
+            content: `🪙 **${user.displayName}** joins the wagon as a **${character.profession}** from Independence.`,
             ephemeral: false,
         });
     }
