@@ -2,6 +2,8 @@
  * Oregon Trail-inspired embed styling (parody — not affiliated with Oregon Trail).
  */
 
+const { EmbedBuilder } = require('discord.js');
+
 const COLORS = {
     trail: 0x2d8a2d,  // green CRT / prairie
     amber: 0xffaa00,  // classic terminal amber
@@ -213,8 +215,15 @@ function weatherLine(weather) {
 }
 
 /** Rumble-style narrative — prose with bold names (no code blocks). */
-function formatTrailNarrative(events) {
-    const lines = events
+function formatTrailNarrative(events, options = {}) {
+    const { includeRoutine = false } = options;
+    const filtered = includeRoutine
+        ? events
+        : events.filter(
+            (e) => e.severity !== 'routine' && !(e.type === 'day' && !e.landmark && !e.river),
+        );
+
+    const lines = filtered
         .filter((e) => e.type !== 'day')
         .map((e) => {
             let text = stripLeadingEmoji(e.text);
@@ -233,6 +242,35 @@ function formatTrailNarrative(events) {
     }
 
     return lines.join('\n');
+}
+
+function formatHighlightTitle(day, events, landmarkName) {
+    const death = events.find((e) => e.type === 'death');
+    const combat = events.find((e) => e.type === 'combat');
+    if (death) {
+        return `Day ${day} — ☠️ ${death.victim || 'A pioneer'} falls${landmarkName ? ` at ${landmarkName}` : ''}`;
+    }
+    if (combat) return `Day ${day} — ⚔️ Blood on the trail`;
+    if (events.some((e) => e.landmark)) return `Day ${day} — ${landmarkName || 'Landmark'}`;
+    if (events.some((e) => e.river)) return `Day ${day} — River crossing`;
+    return formatDayTitle(
+        pickDayHeader(day, events[0]?.weather, events, { name: landmarkName }),
+        day,
+    );
+}
+
+function buildPhaseEmbed(phase, aliveCount, eraName, flavor) {
+    const titles = {
+        killzone: '🔥 ACT II — KILL ZONE',
+        final: '🔥 ACT III — FINAL FORD',
+    };
+    return new EmbedBuilder()
+        .setColor(COLORS.amber)
+        .setTitle(titles[phase] || 'ACT I — DEPARTURE')
+        .setDescription(
+            `${flavor}\n\n**${aliveCount}** pioneer${aliveCount === 1 ? '' : 's'} remain.\n**Era:** ${eraName}`,
+        )
+        .setTimestamp();
 }
 
 /** Compact stats line like Rumble's "Players Left: X • Era: Y" footer. */
@@ -279,6 +317,8 @@ module.exports = {
     pickSupportWink,
     weatherLine,
     formatTrailNarrative,
+    formatHighlightTitle,
+    buildPhaseEmbed,
     formatDayFooter,
     progressBar,
     WAGON_ASCII,
