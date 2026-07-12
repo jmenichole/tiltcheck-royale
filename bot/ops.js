@@ -61,8 +61,14 @@ function postOps(kind, build) {
         .catch((err) => console.warn(`[ops] ${kind} dropped: ${err.message}`));
 }
 
+function criticalMention() {
+    const userId = _config?.ops?.alertUserId;
+    return userId ? `<@${userId}>` : '';
+}
+
 function postError({ context, message, stack }) {
     postOps('error', () => {
+        const mention = criticalMention();
         const embed = new EmbedBuilder()
             .setColor(COLORS.error)
             .setTitle('🔴 Bot error')
@@ -72,7 +78,11 @@ function postError({ context, message, stack }) {
         if (stack) {
             embed.addFields({ name: 'Stack', value: `\`\`\`\n${truncate(stack, 900)}\n\`\`\`` });
         }
-        return { embeds: [embed] };
+        return {
+            content: mention ? `${mention} **critical alert**` : undefined,
+            allowedMentions: mention ? { users: [_config.ops.alertUserId] } : { parse: [] },
+            embeds: [embed],
+        };
     });
 }
 

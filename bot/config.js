@@ -42,6 +42,7 @@ function getConfig() {
             errorChannelId: (process.env.OPS_ERROR_CHANNEL_ID || '').trim(),
             analyticsChannelId: (process.env.OPS_ANALYTICS_CHANNEL_ID || '').trim(),
             supportChannelId: (process.env.OPS_SUPPORT_CHANNEL_ID || '').trim(),
+            alertUserId: (process.env.OPS_ALERT_USER_ID || '1153034319271559328').trim(),
         },
     };
 }
