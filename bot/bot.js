@@ -12,6 +12,15 @@ const {
     Events: DEvents,
 } = require('discord.js');
 const { requireEnv, getConfig } = require('./config.js');
+const {
+    initOps,
+    postError,
+    postSupport,
+    postGuildInstall,
+    postPurchase,
+    postGameStarted,
+    postGameEnded,
+} = require('./ops.js');
 const { createGame, createCharacter, createBotCharacter, runDay, checkWinner, syncPhase, resolveRiverChoice } = require('./simulation.js');
 const {
     CHOICE_MS, buildChoiceEmbed, buildChoiceButtons,
@@ -25,6 +34,8 @@ const {
 const {
     hasSupporterFromEntitlements,
     hasTrailPassAccess,
+    getTrailPassSkuId,
+    getSupporterSkuId,
 } = require('./premium.js');
 const { getEra, getLandmark, getThemePack } = require('./themes/index.js');
 const {
@@ -205,6 +216,12 @@ async function handleSupportCommand(interaction) {
 
     if (type === 'donate') {
         await interaction.deferReply({ ephemeral: true });
+        postSupport({
+            type: 'donate',
+            user: interaction.user,
+            guild: interaction.guild,
+            details: 'Requested Ko-fi DM',
+        });
         try {
             await interaction.user.send({ embeds: [buildDonateDmEmbed()] });
             await interaction.editReply({ content: '✅ Sent the Ko-fi link to your DMs!' });
@@ -222,6 +239,12 @@ async function handleSupportCommand(interaction) {
     if (type === 'say_hi') {
         const note = details || '(waved from the trail)';
         console.log(`[support:hi] ${interaction.user.tag} (${interaction.user.id}): ${note}`);
+        postSupport({
+            type: 'say_hi',
+            user: interaction.user,
+            guild: interaction.guild,
+            details: note,
+        });
         await interaction.editReply({
             content: (
                 `👋 **Howdy, ${interaction.user.username}!**\n` +
@@ -241,6 +264,12 @@ async function handleSupportCommand(interaction) {
 
         const label = type === 'bug_report' ? 'bug' : 'suggestion';
         console.log(`[support:${label}] ${interaction.user.tag} (${interaction.user.id}): ${details}`);
+        postSupport({
+            type,
+            user: interaction.user,
+            guild: interaction.guild,
+            details,
+        });
 
         const embed = buildSupportEmbed();
         embed.addFields({
@@ -377,6 +406,13 @@ async function resolvePendingChoice(channelId, entry, channel) {
         game.phase = 'ended';
         await postQuietSummary(channel, game);
         await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
+        postGameEnded({
+            guildId: channel.guildId,
+            channelId,
+            era: getEra(game.eraId)?.name || game.eraId,
+            winnerTag: result.winner?.displayName || result.winner?.name || '?',
+            days: game.day,
+        });
         activeGames.delete(channelId);
         return;
     }
@@ -514,6 +550,13 @@ async function startSimulation(channelId, lobbyMessageId) {
         ),
     });
 
+    postGameStarted({
+        guildId: channel.guildId,
+        channelId,
+        era: getEra(game.eraId)?.name || game.eraId,
+        players: game.party.length,
+    });
+
     const tick = async () => {
         if (game.pendingChoice) return;
 
@@ -523,6 +566,13 @@ async function startSimulation(channelId, lobbyMessageId) {
             game.phase = 'ended';
             await postQuietSummary(channel, game);
             await channel.send({ embeds: [buildVictoryEmbed(result.text, result.winner, game.eraId)] });
+            postGameEnded({
+                guildId: channel.guildId,
+                channelId,
+                era: getEra(game.eraId)?.name || game.eraId,
+                winnerTag: result.winner?.displayName || result.winner?.name || '?',
+                days: game.day,
+            });
             activeGames.delete(channelId);
             return;
         }
@@ -641,6 +691,7 @@ process.on('SIGTERM', shutdown);
 client.once(DEvents.ClientReady, async () => {
     console.log(`✅ Tilt Battle Royale bot online as ${client.user.tag}`);
     console.log(`🌐 Health check on port ${config.port}`);
+    initOps(client, config);
     client.user.setActivity('Tilt Battle Royale 🪖', { type: 0 });
 
     if (client.user.username !== config.botUsername) {
@@ -654,6 +705,34 @@ client.once(DEvents.ClientReady, async () => {
             );
         }
     }
+});
+
+client.on(DEvents.GuildCreate, (guild) => {
+    postGuildInstall(guild);
+});
+
+client.on(DEvents.EntitlementCreate, (entitlement) => {
+    const skuId = String(entitlement.skuId);
+    let skuLabel = skuId;
+    if (skuId === String(getTrailPassSkuId())) skuLabel = 'Trail Pass';
+    else if (skuId === String(getSupporterSkuId())) skuLabel = 'Pioneer Supporter';
+    postPurchase({
+        userId: entitlement.userId,
+        skuId,
+        skuLabel,
+    });
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('uncaughtException:', err);
+    postError({ context: 'uncaughtException', message: err.message, stack: err.stack });
+});
+
+process.on('unhandledRejection', (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    console.error('unhandledRejection:', reason);
+    postError({ context: 'unhandledRejection', message, stack });
 });
 
 client.on(DEvents.InteractionCreate, async (interaction) => {
@@ -850,6 +929,11 @@ client.on(DEvents.InteractionCreate, async (interaction) => {
     }
     } catch (err) {
         console.error('Interaction error:', err.message || err, err.stack);
+        postError({
+            context: `interaction:${interaction.commandName || interaction.customId || 'unknown'}`,
+            message: err.message || String(err),
+            stack: err.stack,
+        });
         if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ Something went wrong. Try again in a moment.', ephemeral: true }).catch(() => {});
         } else if (interaction.isRepliable()) {

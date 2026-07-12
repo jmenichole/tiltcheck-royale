@@ -37,6 +37,12 @@ function getConfig() {
         soloTestUserIds: parseIdList(
             process.env.SOLO_TEST_USER_IDS || process.env.TRAIL_PASS_BYPASS_USER_IDS || '',
         ),
+        ops: {
+            guildId: (process.env.OPS_GUILD_ID || '').trim(),
+            errorChannelId: (process.env.OPS_ERROR_CHANNEL_ID || '').trim(),
+            analyticsChannelId: (process.env.OPS_ANALYTICS_CHANNEL_ID || '').trim(),
+            supportChannelId: (process.env.OPS_SUPPORT_CHANNEL_ID || '').trim(),
+        },
     };
 }
 
